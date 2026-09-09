@@ -17,6 +17,6 @@ jobs:
   test:
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Swift tests
         run: swift test --package-path macos

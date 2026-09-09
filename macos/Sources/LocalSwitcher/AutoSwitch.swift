@@ -87,11 +87,22 @@ enum LayoutDetector {
         // не даёт пинг-понг. Жёсткие гейты (secure/denied-app/never) проверены ДО decide.
         if AutoSwitchPolicy.isAlwaysConvert(converted) { return .switchToConverted }
 
+        let cur = String(currentLang.prefix(2))
+        let oth = String(otherLang.prefix(2))
+
         // --- мягкие вето (дёшево, до словаря) ---
-        // 1 буква — не трогаем никогда (неоднозначность запредельная). 2 буквы —
-        // отдельная ветка ниже через частотный список (ShortWords), т.к. на такой длине
-        // системный словарь ненадёжен; 3+ — обычный путь через NSSpellChecker.
-        guard typed.count >= 2 else { return .undecided }
+        // Одиночные буквы исправляем только по закрытым спискам реальных слов: например,
+        // `b` -> `и`, `d` -> `в`, `ф` -> `a`. Это важный переход после английского
+        // технического термина (`ssh b nginx`), где словарного контекста самого токена нет.
+        // Верхний регистр не трогаем: standalone B/C и похожие обозначения слишком часты.
+        if typed.count == 1 {
+            guard typed == typed.lowercased(), converted == converted.lowercased(),
+                  typed.allSatisfy({ $0.isLetter }), converted.allSatisfy({ $0.isLetter }) else {
+                return .undecided
+            }
+            if let current = oneLetterWords(cur), current.contains(typed) { return .keep }
+            return oneLetterWords(oth)?.contains(converted) == true ? .switchToConverted : .undecided
+        }
         // Обычный путь — набранное целиком буквенное. Плюс (issue #22, п.3) случай «буквы
         // на клавишах-пунктуации»: ё/х/ъ/ж/э/б/ю в ЙЦУКЕН живут на ` [ ] ; ' , . — тогда
         // typed содержит эти знаки, но КОНВЕРСИЯ целиком буквенная, и решает словарь ниже.
@@ -107,9 +118,6 @@ enum LayoutDetector {
             if isAllCaps(typed) { return .undecided }                      // акронимы
             if looksLikeCodeIdentifier(typed) { return .undecided }        // camelCase / смешанные алфавиты
         }
-
-        let cur = String(currentLang.prefix(2))
-        let oth = String(otherLang.prefix(2))
 
         // --- Кросс-скрипт пары с ивритом (3.0) ---
         // Системный ивритский словарь macOS для детекта БЕСПОЛЕЗЕН: он принимает любой
@@ -152,6 +160,11 @@ enum LayoutDetector {
         // Коллизий «частое↔частое» нет (аудит образов раскладки). Пары с языком без списка
         // сюда не попадают → 2-буквенные, как и раньше, не трогаются.
         if typed.count == 2 {
+            let convertedCurated = HighConfidenceLexicon.contains(converted, language: oth)
+            let typedCurated = HighConfidenceLexicon.contains(typed, language: cur)
+            if convertedCurated != typedCurated {
+                return convertedCurated ? .switchToConverted : .keep
+            }
             guard let othShort = ShortWords.common(oth) else { return .undecided }
             if let curShort = ShortWords.common(cur), curShort.contains(typed.lowercased()) {
                 return .keep   // уже частое слово в текущей раскладке — не трогаем
@@ -163,7 +176,20 @@ enum LayoutDetector {
         let convertedConfidence = Dict.confidence(converted.lowercased(), lang: oth)
         guard convertedConfidence != .absent else { return .keep }
         let typedConfidence = Dict.confidence(typed.lowercased(), lang: cur)
+        // Очень широкий fallback-корпус содержит имена и исторические формы. На 3-4
+        // символах его положительного сигнала недостаточно: именно так `inst` ошибочно
+        // превращался в русский образ. Короткие слова должны подтвердить AppleSpell,
+        // curated-словарь или специальные списки выше.
+        if convertedConfidence == .bundled, typed.count < 5 { return .keep }
         return convertedConfidence > typedConfidence ? .switchToConverted : .keep
+    }
+
+    private static func oneLetterWords(_ language: String) -> Set<String>? {
+        switch language.lowercased().prefix(2) {
+        case "ru": ["а", "в", "и", "к", "о", "с", "у", "я"]
+        case "en": ["a", "i"]
+        default: nil
+        }
     }
 
     /// issue #15: отщепляет прилипшую к концу слова пунктуацию ("ghbdtn," → ядро 6 + ",").

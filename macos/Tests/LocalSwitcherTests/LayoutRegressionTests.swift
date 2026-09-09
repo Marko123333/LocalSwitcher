@@ -45,4 +45,69 @@ struct LayoutRegressionTests {
         )
         #expect(decision == .switchToConverted)
     }
+
+    @Test @MainActor func keepsEnglishInstInsteadOfTrustingNoisyFallback() {
+        let target = KeyMapping.convert("inst")
+        #expect(LayoutDetector.decide(
+            typed: "inst",
+            converted: target,
+            currentLang: "en",
+            otherLang: "ru",
+            capsLock: false
+        ) == .keep)
+    }
+
+    @Test @MainActor func convertsISPAndISPManagerFromRussianLayout() {
+        #expect(KeyMapping.convert("isp") == "шыз")
+        #expect(KeyMapping.convert("ispmanager") == "шызьфтфпук")
+        for target in ["isp", "ispmanager", "api", "cdn", "db", "dev", "inst", "sftp", "ui", "ux"] {
+            let typed = KeyMapping.convert(target)
+            #expect(LayoutDetector.decide(
+                typed: typed,
+                converted: target,
+                currentLang: "ru",
+                otherLang: "en",
+                capsLock: false
+            ) == .switchToConverted)
+        }
+    }
+
+    @Test @MainActor func convertsRussianConjunctionFromEnglishLayout() {
+        for (typed, converted) in [("b", "и"), ("d", "в"), ("c", "с"), ("r", "к"),
+                                   ("j", "о"), ("e", "у"), ("f", "а"), ("z", "я")] {
+            #expect(LayoutDetector.decide(
+                typed: typed,
+                converted: converted,
+                currentLang: "en",
+                otherLang: "ru",
+                capsLock: false
+            ) == .switchToConverted)
+        }
+        #expect(LayoutDetector.decide(
+            typed: "i",
+            converted: "ш",
+            currentLang: "en",
+            otherLang: "ru",
+            capsLock: false
+        ) == .keep)
+        #expect(LayoutDetector.decide(
+            typed: "B",
+            converted: "И",
+            currentLang: "en",
+            otherLang: "ru",
+            capsLock: false
+        ) == .undecided)
+    }
+
+    @Test @MainActor func convertsEnglishArticlesFromRussianLayout() {
+        for (typed, converted) in [("ф", "a"), ("ш", "i")] {
+            #expect(LayoutDetector.decide(
+                typed: typed,
+                converted: converted,
+                currentLang: "ru",
+                otherLang: "en",
+                capsLock: false
+            ) == .switchToConverted)
+        }
+    }
 }

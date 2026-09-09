@@ -7,6 +7,9 @@ struct HighConfidenceLexiconTests {
         #expect(HighConfidenceLexicon.contains("ssh", language: "en"))
         #expect(HighConfidenceLexicon.contains("GitHub", language: "en-US"))
         #expect(HighConfidenceLexicon.contains("NGINX", language: "EN"))
+        #expect(HighConfidenceLexicon.contains("ISP", language: "en"))
+        #expect(HighConfidenceLexicon.contains("ispmanager", language: "en"))
+        #expect(HighConfidenceLexicon.contains("inst", language: "en"))
     }
 
     @Test func doesNotLeakTermsAcrossLanguages() {

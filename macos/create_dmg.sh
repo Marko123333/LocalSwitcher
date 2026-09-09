@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-APP_NAME="RuSwitcher"
+APP_NAME="LocalSwitcher"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"   # все относительные пути — от macos/ (аудит: раньше зависели от CWD)
 # --beta: собрать ПРЕД-РЕЛИЗ из version-beta.json, НЕ трогая стабильный фид (version.json)
@@ -20,11 +20,11 @@ BUILD=$(/usr/bin/python3 -c "import json;print(json.load(open('$VERSION_FILE')).
 DMG_NAME="${APP_NAME}-${VERSION}.dmg"
 # Нотаризация: предпочитаем API-ключ App Store Connect — файл на диске, НЕ зависит
 # от Keychain (keychain-профиль уже дважды пропадал: 2026-07-01 и 2026-07-10).
-# Конфиг ключа: ~/.config/ruswitcher/notary.conf (задаёт NOTARY_KEY_FILE,
+# Конфиг ключа: ~/.config/localswitcher/notary.conf (задаёт NOTARY_KEY_FILE,
 # NOTARY_KEY_ID, NOTARY_ISSUER_ID; chmod 600). Фолбэк — keychain-профиль.
 # Переопределение: NOTARIZE_PROFILE=<name>, NOTARY_CONF=<path>. Пропуск: SKIP_NOTARIZE=1.
-NOTARIZE_PROFILE="${NOTARIZE_PROFILE:-notarytool-studio}"
-NOTARY_CONF="${NOTARY_CONF:-$HOME/.config/ruswitcher/notary.conf}"
+NOTARIZE_PROFILE="${NOTARIZE_PROFILE:-localswitcher-notary}"
+NOTARY_CONF="${NOTARY_CONF:-$HOME/.config/localswitcher/notary.conf}"
 if [ -f "$NOTARY_CONF" ]; then
     # shellcheck source=/dev/null
     . "$NOTARY_CONF"
@@ -41,7 +41,7 @@ DMG_TEMP="${APP_NAME}-temp.dmg"
 VOL_NAME="${APP_NAME}"
 BACKGROUND="dmg_background.png"
 APP_PATH="${APP_NAME}.app"
-DMG_SIZE="10m"
+DMG_SIZE="24m"
 
 echo "=== Creating styled DMG ==="
 
@@ -56,14 +56,14 @@ if [ "${SKIP_NOTARIZE:-0}" != "1" ]; then
         echo "  (NOTARY_KEY_FILE=…AuthKey_XXX.p8, NOTARY_KEY_ID=…, NOTARY_ISSUER_ID=…)."
         echo "Вариант 2: keychain-профиль (пароль — app-specific password, интерактивно):"
         echo "  xcrun notarytool store-credentials $NOTARIZE_PROFILE \\"
-        echo "      --apple-id xrashid@gmail.com --team-id 9GEWCZ59HK"
+        echo "      --apple-id you@example.com --team-id YOUR_TEAM_ID"
         exit 69
     fi
     echo "→ Notary credentials OK ($NOTARY_VIA)"
 fi
 
 # 0. ВСЕГДА пересобираем приложение из исходников. Без этого шага DMG берёт имя
-#    из version.json, а payload — из случайно лежащего рядом RuSwitcher.app.
+#    из version.json, а payload — из случайно лежащего рядом LocalSwitcher.app.
 #    Именно так в релиз 2.1.0 попал бандл 2.0.3: имя было 2.1.0, а внутри 2.0.3.
 echo "→ Rebuilding app from source (build_app.sh)..."
 "$SCRIPT_DIR/build_app.sh"
@@ -96,9 +96,9 @@ fi
 # Clean up
 rm -f "$DMG_NAME" "$DMG_TEMP"
 
-# 0c. Снимаем «застрявшие» тома с тем же именем. Если /Volumes/RuSwitcher уже занят,
-#     наш temp-образ примонтируется как «RuSwitcher 1», а AppleScript-оформление
-#     (`tell disk "RuSwitcher"`) уйдёт на чужой/несуществующий диск → .DS_Store с фоном
+# 0c. Снимаем «застрявшие» тома с тем же именем. Если /Volumes/LocalSwitcher уже занят,
+#     наш temp-образ примонтируется как «LocalSwitcher 1», а AppleScript-оформление
+#     (`tell disk "LocalSwitcher"`) уйдёт на чужой/несуществующий диск → .DS_Store с фоном
 #     и позициями НЕ запишется в наш образ, и DMG откроется голым. Чистим заранее.
 for v in "/Volumes/${VOL_NAME}"*; do
     if [ -d "$v" ]; then
@@ -116,7 +116,7 @@ hdiutil create -volname "$VOL_NAME" -fs HFS+ \
 echo "→ Mounting..."
 MOUNT_DIR=$(hdiutil attach -readwrite -noverify "$DMG_TEMP" | grep "/Volumes/" | sed 's/.*\(\/Volumes\/.*\)/\1/')
 echo "   Mounted at: $MOUNT_DIR"
-# Защита: если имя всё же разъехалось (том «RuSwitcher 1») — оформление уйдёт мимо. Прерываемся.
+# Защита: если имя всё же разъехалось (том «LocalSwitcher 1») — оформление уйдёт мимо. Прерываемся.
 if [ "$MOUNT_DIR" != "/Volumes/${VOL_NAME}" ]; then
     echo "ERROR: temp DMG mounted at '$MOUNT_DIR', expected '/Volumes/${VOL_NAME}'."
     echo "       Stale volume collision — refusing to build an unstyled DMG."
@@ -196,7 +196,7 @@ rm -f "$DMG_TEMP"
 # 9a. Подписываем САМ .dmg Developer ID. Без этого образ нотаризуется и стейплится, но
 #     `spctl -t install` даёт "no usable signature" — у скачанного образа нет подписи
 #     контейнера, и на части Mac это приводит к недоверию к вынутому из него .app.
-SIGN_ID="Developer ID Application: Rashid Nasibulin (9GEWCZ59HK)"
+SIGN_ID="${RS_SIGN_ID:--}"
 if [ "${SKIP_NOTARIZE:-0}" != "1" ]; then
     echo "→ Code signing the DMG (Developer ID + secure timestamp)..."
     codesign --force --timestamp --sign "$SIGN_ID" "$DMG_NAME"
@@ -239,7 +239,7 @@ with open(path, "w") as f:
     f.write("\n")
 PY
 else
-    echo "→ Writing sha256 into version.json and ruswitcher.rb..."
+    echo "→ Writing sha256 into version.json and localswitcher.rb..."
     /usr/bin/python3 - "$DMG_SHA" <<'PY'
 import json, sys
 sha = sys.argv[1]
@@ -250,13 +250,13 @@ with open("../version.json", "w") as f:
     json.dump(data, f, indent=2)
     f.write("\n")
 PY
-    /usr/bin/sed -i '' -E "s/^([[:space:]]*sha256 \").*(\")/\1${DMG_SHA}\2/" "$SCRIPT_DIR/ruswitcher.rb"
-    /usr/bin/sed -i '' -E "s/^([[:space:]]*version \").*(\")/\1${VERSION}\2/" "$SCRIPT_DIR/ruswitcher.rb"
+    /usr/bin/sed -i '' -E "s/^([[:space:]]*sha256 \").*(\")/\1${DMG_SHA}\2/" "$SCRIPT_DIR/localswitcher.rb"
+    /usr/bin/sed -i '' -E "s/^([[:space:]]*version \").*(\")/\1${VERSION}\2/" "$SCRIPT_DIR/localswitcher.rb"
 
     # Проверяем, что подстановка реально произошла: sed при отсутствии совпадения выходит
     # с кодом 0 (set -e не ловит), поэтому дрейф формата каска прошёл бы молча со старой версией.
-    if ! grep -q "sha256 \"${DMG_SHA}\"" "$SCRIPT_DIR/ruswitcher.rb" || ! grep -q "version \"${VERSION}\"" "$SCRIPT_DIR/ruswitcher.rb"; then
-        echo "ERROR: cask update via sed did not take (format drift in ruswitcher.rb?). Aborting." >&2
+    if ! grep -q "sha256 \"${DMG_SHA}\"" "$SCRIPT_DIR/localswitcher.rb" || ! grep -q "version \"${VERSION}\"" "$SCRIPT_DIR/localswitcher.rb"; then
+        echo "ERROR: cask update via sed did not take (format drift in localswitcher.rb?). Aborting." >&2
         exit 1
     fi
 fi
@@ -265,4 +265,4 @@ echo ""
 echo "=== Done! ==="
 echo "DMG: $(pwd)/$DMG_NAME ($(du -h "$DMG_NAME" | cut -f1))"
 echo "SHA256: $DMG_SHA"
-echo "→ version.json and ruswitcher.rb updated with this hash."
+echo "→ version.json and localswitcher.rb updated with this hash."

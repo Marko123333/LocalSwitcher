@@ -1,7 +1,7 @@
 #!/usr/bin/env swift
 import AppKit
 
-// Генерирует иконку RuSwitcher — клавиатура с RU/EN
+// Генерирует иконку LocalSwitcher — клавиатура с RU/EN
 func generateIcon(size: Int) -> NSImage {
     let img = NSImage(size: NSSize(width: size, height: size))
     img.lockFocus()
@@ -77,7 +77,7 @@ func saveAsPNG(_ image: NSImage, path: String, size: Int) {
     try! data.write(to: URL(fileURLWithPath: path))
 }
 
-let basePath = "/Volumes/MacHome/GitHome/RuSwitcher/Assets.xcassets/AppIcon.appiconset"
+let basePath = "/Volumes/MacHome/GitHome/LocalSwitcher/Assets.xcassets/AppIcon.appiconset"
 
 // Размеры для macOS App Store
 let sizes = [16, 32, 64, 128, 256, 512, 1024]
@@ -89,7 +89,7 @@ for size in sizes {
 }
 
 // Также сгенерируем iconset для .icns
-let iconsetPath = "/Volumes/MacHome/GitHome/RuSwitcher/RuSwitcher.iconset"
+let iconsetPath = "/Volumes/MacHome/GitHome/LocalSwitcher/LocalSwitcher.iconset"
 try? FileManager.default.createDirectory(atPath: iconsetPath, withIntermediateDirectories: true)
 
 let iconsetSizes: [(String, Int)] = [

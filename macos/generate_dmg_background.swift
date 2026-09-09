@@ -61,12 +61,12 @@ for y in stride(from: 0, through: height, by: 30) {
 }
 ctx.strokePath()
 
-// --- Title "RuSwitcher" at top ---
+// --- Title "LocalSwitcher" at top ---
 let titleAttrs: [NSAttributedString.Key: Any] = [
     .font: NSFont.systemFont(ofSize: 28, weight: .bold),
     .foregroundColor: NSColor(calibratedRed: 0.85, green: 0.88, blue: 0.95, alpha: 1.0),
 ]
-let title = "RuSwitcher" as NSString
+let title = "LocalSwitcher" as NSString
 let titleSize = title.size(withAttributes: titleAttrs)
 title.draw(at: NSPoint(x: (width - titleSize.width) / 2, y: height - 55), withAttributes: titleAttrs)
 
@@ -138,7 +138,7 @@ let verAttrs: [NSAttributedString.Key: Any] = [
     .font: NSFont.systemFont(ofSize: 10, weight: .regular),
     .foregroundColor: NSColor(calibratedRed: 0.4, green: 0.42, blue: 0.5, alpha: 0.6),
 ]
-let verText = "v\(appVersion)  •  MIT License  •  github.com/rashn/RuSwitcher" as NSString
+let verText = "v\(appVersion)  •  MIT License  •  github.com/Marko123333/LocalSwitcher" as NSString
 let verSize = verText.size(withAttributes: verAttrs)
 verText.draw(at: NSPoint(x: (width - verSize.width) / 2, y: 15), withAttributes: verAttrs)
 

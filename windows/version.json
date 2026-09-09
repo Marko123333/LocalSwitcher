@@ -1,6 +1,0 @@
-{
-  "version": "0.9.0",
-  "url": "https://github.com/rashn/RuSwitcher/releases/tag/win-v0.9.0",
-  "notes": "First Windows beta of RuSwitcher: manual-trigger conversion, whole-line and selection conversion, smart per-word keep, as-you-type auto conversion (beta), layout-switch hotkey, per-app layout memory, tray settings.",
-  "sha256": ""
-}

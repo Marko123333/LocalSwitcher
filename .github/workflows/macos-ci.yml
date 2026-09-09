@@ -1,0 +1,22 @@
+name: macOS CI
+
+on:
+  push:
+    paths:
+      - "macos/**"
+      - ".github/workflows/macos-ci.yml"
+  pull_request:
+    paths:
+      - "macos/**"
+      - ".github/workflows/macos-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Swift tests
+        run: swift test --package-path macos

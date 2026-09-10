@@ -5,6 +5,8 @@ import Testing
 struct HighConfidenceLexiconTests {
     @Test func recognizesTechnicalTermsCaseInsensitively() {
         #expect(HighConfidenceLexicon.contains("ssh", language: "en"))
+        #expect(HighConfidenceLexicon.contains("mcp", language: "en"))
+        #expect(HighConfidenceLexicon.contains("MCP", language: "en"))
         #expect(HighConfidenceLexicon.contains("GitHub", language: "en-US"))
         #expect(HighConfidenceLexicon.contains("NGINX", language: "EN"))
         #expect(HighConfidenceLexicon.contains("ISP", language: "en"))
@@ -22,6 +24,7 @@ struct HighConfidenceLexiconTests {
 
     @Test func doesNotLeakTermsAcrossLanguages() {
         #expect(!HighConfidenceLexicon.contains("ssh", language: "ru"))
+        #expect(HighConfidenceLexicon.contains("ещё", language: "ru"))
         #expect(!HighConfidenceLexicon.contains("definitely-not-a-term", language: "en"))
     }
 

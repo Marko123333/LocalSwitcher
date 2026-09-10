@@ -112,6 +112,16 @@ enum LayoutDetector {
         let cur = String(currentLang.prefix(2))
         let oth = String(otherLang.prefix(2))
 
+        // Exact curated words are stronger than the generic acronym/camelCase vetoes.
+        // This lets a known technical acronym keep its spelling in the correct layout
+        // and convert in the wrong one (`ЬСЗ` -> `MCP`, `ЫЫР` -> `SSH`). It also lets
+        // punctuation-backed exact Russian words such as `to\`` -> `ещё` through.
+        let typedCurated = HighConfidenceLexicon.contains(typed, language: cur)
+        let convertedCurated = HighConfidenceLexicon.contains(converted, language: oth)
+        if typedCurated != convertedCurated {
+            return convertedCurated ? .switchToConverted : .keep
+        }
+
         // Product/runtime names with an internal dot are not accepted by normal
         // spellcheckers. A small exact lexicon handles `тщвуюоы` -> `node.js`
         // (and the reverse keep decision) without opening a broad URL/domain rule.
@@ -195,11 +205,6 @@ enum LayoutDetector {
         // Коллизий «частое↔частое» нет (аудит образов раскладки). Пары с языком без списка
         // сюда не попадают → 2-буквенные, как и раньше, не трогаются.
         if typed.count == 2 {
-            let convertedCurated = HighConfidenceLexicon.contains(converted, language: oth)
-            let typedCurated = HighConfidenceLexicon.contains(typed, language: cur)
-            if convertedCurated != typedCurated {
-                return convertedCurated ? .switchToConverted : .keep
-            }
             guard let othShort = ShortWords.common(oth) else { return .undecided }
             if let curShort = ShortWords.common(cur), curShort.contains(typed.lowercased()) {
                 return .keep   // уже частое слово в текущей раскладке — не трогаем

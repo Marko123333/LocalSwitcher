@@ -153,7 +153,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             alternatives: last.alternatives
         )
         lastAutoConverted = nil
-        rslog("auto: user rejected correction; session override added")
+        rslog("auto: user rejected correction; one-shot override armed")
     }
 
     private func startPerAppLayout() {
@@ -536,8 +536,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let bc = keyboardMonitor.boundaryCount
         guard !allKeys.isEmpty else { rslog("auto: bail empty-keys"); return }  // курсор уехал — небезопасно
         guard let fullPair = DynamicKeyMapping.convertKeys(allKeys) else { rslog("auto: bail convertKeys-nil"); return }
-        if sessionCorrectionSuppression.contains(fullPair.original) {
-            rslog("auto: bail session-user-override")
+        if sessionCorrectionSuppression.consume(fullPair.original) {
+            rslog("auto: bail one-shot-user-override")
             return
         }
 

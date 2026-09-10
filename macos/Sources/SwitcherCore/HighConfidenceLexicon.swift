@@ -10,7 +10,7 @@ public enum HighConfidenceLexicon {
         "gitlab", "html", "http", "https", "iaas", "ide", "info", "inst",
         "install", "instance", "instagram", "ios", "ipad", "iphone", "ip",
         "isp", "ispmanager", "javascript", "json", "jwt", "kubernetes",
-        "linux", "llm", "macos", "ml", "mongodb", "mysql", "nginx", "node",
+        "linux", "llm", "macos", "mcp", "ml", "mongodb", "mysql", "nginx", "node",
         "nodejs", "npm", "npx", "oauth", "paas", "postgres", "postgresql",
         "prod", "python", "qa", "react", "redis", "repo", "saas", "sdk",
         "sftp", "sql", "ssh", "ssl", "swift", "tcp", "tls", "toml",
@@ -27,7 +27,7 @@ public enum HighConfidenceLexicon {
     /// positive signal, not a replacement for the bundled Russian corpus.
     private static let russian: Set<String> = [
         "руб", "рус", "рос", "коп", "стр", "шт", "тыс", "млн", "млрд",
-        "мин", "сек", "мес", "тел", "имхо", "пж", "пжл", "спс", "прив",
+        "мин", "сек", "мес", "тел", "имхо", "пж", "пжл", "спс", "прив", "ещё",
         "норм", "бля", "блядь", "блять", "сука", "суки", "сучка", "мудак",
         "мудака", "мудаки", "хуй", "хуя", "хуе", "хуё", "хуи", "хуем",
         "хуём", "хуев", "хуёв", "хуйню", "хуйня", "нахуй", "похуй",

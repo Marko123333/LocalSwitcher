@@ -1,7 +1,7 @@
 {
-  "version": "0.1.4",
-  "build": "5",
+  "version": "0.1.5",
+  "build": "6",
   "dev": "dev",
   "url": "https://github.com/Marko123333/LocalSwitcher",
-  "notes": "Short Russian chat replies convert more reliably, including jr to ок, uj to го and ye to ну. Abbreviations, informal vocabulary, hosting-panel names, punctuation-letter keys and session-only correction rejection remain supported."
+  "notes": "Adds reliable conversion for MCP in both cases and for the reported Russian phrase не работает ещё typed in the English layout. Rejecting a correction now skips it once instead of disabling it for the whole session."
 }

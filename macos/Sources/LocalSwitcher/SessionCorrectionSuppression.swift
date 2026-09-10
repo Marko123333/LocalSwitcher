@@ -1,8 +1,9 @@
 import Foundation
 
 /// Remembers auto-corrections the user immediately rejected with Backspace or
-/// Undo. The override is intentionally session-only: it prevents an argument
-/// with the user while avoiding a permanent dictionary mutation from one key.
+/// Undo. Each spelling is skipped once: this lets the user insist on an unusual
+/// form without accidentally disabling a normal correction for the whole app
+/// session.
 struct SessionCorrectionSuppression {
     private(set) var words: Set<String> = []
 
@@ -11,8 +12,8 @@ struct SessionCorrectionSuppression {
         for alternative in alternatives { insert(alternative) }
     }
 
-    func contains(_ word: String) -> Bool {
-        words.contains(normalize(word))
+    mutating func consume(_ word: String) -> Bool {
+        words.remove(normalize(word)) != nil
     }
 
     private mutating func insert(_ word: String) {

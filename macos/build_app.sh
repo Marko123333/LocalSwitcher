@@ -3,7 +3,12 @@ set -e
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 APP_NAME="LocalSwitcher"
-APP_BUNDLE="$PROJECT_DIR/$APP_NAME.app"
+# Documents/iCloud can race with codesign by attaching FinderInfo to a freshly
+# created bundle. Local installs can set RS_OUTPUT_DIR to a temporary directory
+# outside File Provider storage; CI and existing callers keep the repo default.
+APP_OUTPUT_DIR="${RS_OUTPUT_DIR:-$PROJECT_DIR}"
+mkdir -p "$APP_OUTPUT_DIR"
+APP_BUNDLE="$APP_OUTPUT_DIR/$APP_NAME.app"
 # version.json живёт в КОРНЕ репозитория (живой фид обновлений) — не переносить!
 # RS_VERSION_JSON переопределяет источник версии (для бета-сборок → version-beta.json).
 VERSION_JSON="${RS_VERSION_JSON:-$PROJECT_DIR/../version.json}"

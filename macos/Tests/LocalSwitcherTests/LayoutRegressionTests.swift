@@ -82,6 +82,45 @@ struct LayoutRegressionTests {
         }
     }
 
+    @Test @MainActor func convertsMCPInLowercaseAndUppercaseFromRussianLayout() {
+        for target in ["mcp", "MCP"] {
+            let typed = KeyMapping.convert(target)
+            #expect(LayoutDetector.decide(
+                typed: typed,
+                converted: target,
+                currentLang: "ru",
+                otherLang: "en",
+                capsLock: target == "MCP"
+            ) == .switchToConverted)
+        }
+        #expect(KeyMapping.convert("mcp") == "ьсз")
+        #expect(KeyMapping.convert("MCP") == "ЬСЗ")
+    }
+
+    @Test @MainActor func convertsReportedRussianPhraseFromEnglishLayout() {
+        for target in ["не", "работает", "ещё"] {
+            let typed = KeyMapping.convert(target)
+            #expect(LayoutDetector.decide(
+                typed: typed,
+                converted: target,
+                currentLang: "en",
+                otherLang: "ru",
+                capsLock: false
+            ) == .switchToConverted)
+        }
+
+        #expect(KeyMapping.convert("не") == "yt")
+        #expect(KeyMapping.convert("работает") == "hf,jnftn")
+        #expect(KeyMapping.convert("ещё") == "to`")
+        #expect(LayoutDetector.prefersWholeToken(
+            typed: "to`",
+            converted: "ещё",
+            currentLang: "en",
+            otherLang: "ru",
+            convertedHasSafeCorrection: false
+        ))
+    }
+
     @Test @MainActor func convertsRussianConjunctionFromEnglishLayout() {
         for (typed, converted) in [("b", "и"), ("d", "в"), ("c", "с"), ("r", "к"),
                                    ("j", "о"), ("e", "у"), ("f", "а"), ("z", "я")] {
@@ -199,12 +238,19 @@ struct LayoutRegressionTests {
         #expect(Dict.bestCorrection("питух", lang: "ru") == "петух")
     }
 
-    @Test func remembersRejectedCorrectionForTheCurrentSession() {
+    @Test func rejectedCorrectionIsSuppressedOnlyOncePerSpelling() {
         var suppression = SessionCorrectionSuppression()
         suppression.remember(original: "gbne[", alternatives: ["питух"])
-        #expect(suppression.contains("GBNE["))
-        #expect(suppression.contains("ПИТУХ"))
-        #expect(!suppression.contains("петух"))
+        let consumesOriginalOnce = suppression.consume("GBNE[")
+        let consumesOriginalTwice = suppression.consume("gbne[")
+        let consumesAlternativeOnce = suppression.consume("ПИТУХ")
+        let consumesAlternativeTwice = suppression.consume("питух")
+        let consumesUnrelated = suppression.consume("петух")
+        #expect(consumesOriginalOnce)
+        #expect(!consumesOriginalTwice)
+        #expect(consumesAlternativeOnce)
+        #expect(!consumesAlternativeTwice)
+        #expect(!consumesUnrelated)
     }
 
     @Test @MainActor func deletingIntoCorrectionRejectsOnlyTheLastConversion() async {

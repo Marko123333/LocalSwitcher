@@ -16,4 +16,12 @@ struct HighConfidenceLexiconTests {
         #expect(!HighConfidenceLexicon.contains("ssh", language: "ru"))
         #expect(!HighConfidenceLexicon.contains("definitely-not-a-term", language: "en"))
     }
+
+    @Test func recognizesDottedTechnicalTokensWithoutTreatingDomainsAsProducts() {
+        for token in ["node.js", "Node.js", "node.js,", "node.js.", "socket.io", "ASP.NET"] {
+            #expect(HighConfidenceLexicon.containsTechnicalToken(token, language: "en"))
+        }
+        #expect(!HighConfidenceLexicon.containsTechnicalToken("example.com", language: "en"))
+        #expect(!HighConfidenceLexicon.containsTechnicalToken("node.js", language: "ru"))
+    }
 }

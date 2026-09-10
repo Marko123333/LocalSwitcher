@@ -1,0 +1,21 @@
+name: Предложение функции
+description: Предложить новую механику, настройку или интеграцию
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Какую проблему нужно решить
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Как должно работать
+    validations:
+      required: true
+  - type: textarea
+    id: examples
+    attributes:
+      label: Примеры ввода и ожидаемого результата

@@ -820,13 +820,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         let donateItem = NSMenuItem(title: L10n.menuDonate, action: #selector(openDonate), keyEquivalent: "")
         donateItem.target = self
+        donateItem.image = NSImage(systemSymbolName: "heart", accessibilityDescription: nil)
         menu.addItem(donateItem)
 
         let starItem = NSMenuItem(title: L10n.menuStarOnGithub, action: #selector(openGitHub), keyEquivalent: "")
         starItem.target = self
+        starItem.image = NSImage(systemSymbolName: "star", accessibilityDescription: nil)
         menu.addItem(starItem)
 
         let shareItem = NSMenuItem(title: L10n.menuShare, action: nil, keyEquivalent: "")
+        shareItem.image = NSImage(systemSymbolName: "square.and.arrow.up", accessibilityDescription: nil)
         shareItem.submenu = buildShareSubmenu()
         menu.addItem(shareItem)
 
@@ -1060,13 +1063,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func openDonate() {
-        if let url = URL(string: SettingsManager.shared.donateURL) {
+        if let url = URL(string: SettingsManager.supportURL) {
             NSWorkspace.shared.open(url)
         }
     }
 
     @objc private func openGitHub() {
-        if let url = URL(string: SettingsManager.githubURL) {
+        if let url = URL(string: SettingsManager.starURL) {
             NSWorkspace.shared.open(url)
         }
     }
@@ -1191,7 +1194,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func openContactEmail() {
         let ver = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
         guard !SettingsManager.contactEmail.isEmpty else {
-            if let url = URL(string: "\(SettingsManager.githubURL)/issues") { NSWorkspace.shared.open(url) }
+            if let url = URL(string: SettingsManager.contactURL) { NSWorkspace.shared.open(url) }
             return
         }
         let os = ProcessInfo.processInfo.operatingSystemVersionString

@@ -1,8 +1,18 @@
+import Foundation
 import Testing
 @testable import LocalSwitcher
 
 @Suite("Reported layout regressions")
 struct LayoutRegressionTests {
+    @Test func projectMenuDestinationsAreConcreteHTTPSLinks() {
+        for link in [SettingsManager.starURL, SettingsManager.supportURL, SettingsManager.contactURL] {
+            let url = URL(string: link)
+            #expect(url?.scheme == "https")
+            #expect(url?.host == "github.com")
+            #expect(link.contains("Marko123333/LocalSwitcher"))
+        }
+    }
+
     @Test func mapsCyrillicImageOfSSHBackToEnglish() {
         #expect(KeyMapping.convert("ыыр") == "ssh")
     }
@@ -97,6 +107,28 @@ struct LayoutRegressionTests {
             otherLang: "ru",
             capsLock: false
         ) == .undecided)
+    }
+
+    @Test @MainActor func convertsDottedTechnicalNameFromRussianLayout() {
+        for target in ["node.js", "Node.js", "node.js,", "socket.io"] {
+            let typed = KeyMapping.convert(target)
+            #expect(LayoutDetector.decide(
+                typed: typed,
+                converted: target,
+                currentLang: "ru",
+                otherLang: "en",
+                capsLock: false
+            ) == .switchToConverted)
+        }
+
+        let domain = "example.com"
+        #expect(LayoutDetector.decide(
+            typed: KeyMapping.convert(domain),
+            converted: domain,
+            currentLang: "ru",
+            otherLang: "en",
+            capsLock: false
+        ) == .keep)
     }
 
     @Test @MainActor func convertsEnglishArticlesFromRussianLayout() {

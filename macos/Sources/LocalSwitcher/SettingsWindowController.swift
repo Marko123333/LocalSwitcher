@@ -820,21 +820,19 @@ final class SettingsWindowController {
     }
 
     @objc private func openGitHub() {
-        if let url = URL(string: SettingsManager.githubURL) {
+        if let url = URL(string: SettingsManager.starURL) {
             NSWorkspace.shared.open(url)
         }
     }
 
     @objc private func openDonate() {
-        if let url = URL(string: SettingsManager.shared.donateURL) {
+        if let url = URL(string: SettingsManager.supportURL) {
             NSWorkspace.shared.open(url)
         }
     }
 
     @objc private func openContact() {
-        let email = SettingsManager.shared.contactEmail
-        let subject = "LocalSwitcher Feedback"
-        if let url = URL(string: "mailto:\(email)?subject=\(subject.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? subject)") {
+        if let url = URL(string: SettingsManager.contactURL) {
             NSWorkspace.shared.open(url)
         }
     }

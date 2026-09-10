@@ -337,14 +337,19 @@ final class SettingsManager: @unchecked Sendable {
     }
     var alwaysConvertWordsSet: Set<String> { Set(alwaysConvertWords.map { $0.lowercased() }) }
 
-    var donateURL: String { "" }
-    var contactEmail: String { "" }
-
     // MARK: - GitHub coordinates (единственный источник — чтобы при переименовании
     // репозитория правка была в одном месте)
     static let githubOwner = "Marko123333"
     static let githubRepo = "LocalSwitcher"
     static var githubURL: String { "https://github.com/\(githubOwner)/\(githubRepo)" }
+    /// GitHub does not expose a safe GET-only URL that automatically stars a repo.
+    /// Open the project page so the signed-in user can make that explicit choice.
+    static var starURL: String { githubURL }
+    /// A project-owned page with financial and non-financial support options.
+    /// It remains useful before a payment provider is configured.
+    static var supportURL: String { "\(githubURL)/blob/main/SUPPORT.md" }
+    /// Public contact channel that works without publishing a personal email address.
+    static var contactURL: String { "\(githubURL)/issues/new/choose" }
     /// Email для «Связаться с разработчиком» (mailto с предзаполнением). Пусто → кнопка
     /// открывает GitHub Issues как фолбэк.
     static let contactEmail = ""

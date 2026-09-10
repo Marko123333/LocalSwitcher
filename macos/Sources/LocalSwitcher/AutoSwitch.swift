@@ -90,6 +90,19 @@ enum LayoutDetector {
         let cur = String(currentLang.prefix(2))
         let oth = String(otherLang.prefix(2))
 
+        // Product/runtime names with an internal dot are not accepted by normal
+        // spellcheckers. A small exact lexicon handles `тщвуюоы` -> `node.js`
+        // (and the reverse keep decision) without opening a broad URL/domain rule.
+        let typedTechnical = HighConfidenceLexicon.containsTechnicalToken(typed, language: cur)
+        let convertedTechnical = HighConfidenceLexicon.containsTechnicalToken(converted, language: oth)
+        if typedTechnical != convertedTechnical {
+            return convertedTechnical ? .switchToConverted : .keep
+        }
+        // AppleSpell may accept a domain as a valid token. Unknown dotted forms
+        // are therefore an explicit keep; only the exact technical allowlist
+        // above may opt into automatic conversion.
+        if typed.contains(".") || converted.contains(".") { return .keep }
+
         // --- мягкие вето (дёшево, до словаря) ---
         // Одиночные буквы исправляем только по закрытым спискам реальных слов: например,
         // `b` -> `и`, `d` -> `в`, `ф` -> `a`. Это важный переход после английского

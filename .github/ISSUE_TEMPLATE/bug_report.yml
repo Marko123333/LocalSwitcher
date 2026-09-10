@@ -1,0 +1,48 @@
+name: Ошибка коррекции
+description: Сообщить о неправильном переключении или замене текста
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: Спасибо! Не прикладывайте пароли, приватные тексты или другие секреты.
+  - type: input
+    id: typed
+    attributes:
+      label: Что было набрано
+      placeholder: тщвуюоы
+    validations:
+      required: true
+  - type: input
+    id: expected
+    attributes:
+      label: Какой результат ожидался
+      placeholder: node.js
+    validations:
+      required: true
+  - type: input
+    id: actual
+    attributes:
+      label: Что получилось фактически
+    validations:
+      required: true
+  - type: dropdown
+    id: direction
+    attributes:
+      label: Направление
+      options:
+        - Русский -> английский
+        - Английский -> русский
+        - Другое
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: Версия macOS и модель Mac
+      placeholder: macOS 15, MacBook Air M1
+  - type: textarea
+    id: context
+    attributes:
+      label: Контекст
+      description: В каком приложении это произошло и какие символы стояли рядом?

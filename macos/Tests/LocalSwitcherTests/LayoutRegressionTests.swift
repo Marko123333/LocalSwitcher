@@ -131,15 +131,20 @@ struct LayoutRegressionTests {
         ) == .keep)
     }
 
-    @Test @MainActor func convertsRussianNuFromEnglishYe() {
-        #expect(KeyMapping.convert("ye") == "ну")
-        #expect(LayoutDetector.decide(
-            typed: "ye",
-            converted: "ну",
-            currentLang: "en",
-            otherLang: "ru",
-            capsLock: false
-        ) == .switchToConverted)
+    @Test @MainActor func convertsPreferredRussianShortRepliesFromEnglishLayout() {
+        for (typed, target) in [
+            ("ye", "ну"), ("jr", "ок"), ("uj", "го"),
+            ("lf", "да"), ("yt", "не"),
+        ] {
+            #expect(KeyMapping.convert(typed) == target)
+            #expect(LayoutDetector.decide(
+                typed: typed,
+                converted: target,
+                currentLang: "en",
+                otherLang: "ru",
+                capsLock: false
+            ) == .switchToConverted)
+        }
     }
 
     @Test @MainActor func convertsRussianAbbreviationsAndProfanityFromEnglishLayout() {

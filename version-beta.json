@@ -1,7 +1,7 @@
 {
-  "version": "0.1.3b",
-  "build": "4",
+  "version": "0.1.4b",
+  "build": "5",
   "dev": "dev",
   "url": "https://github.com/Marko123333/LocalSwitcher",
-  "notes": "Development channel with stronger short-word, abbreviation, informal-vocabulary, hosting-panel and punctuation-key handling plus session-only rejection learning. Automatic updates remain disabled until a signed release channel is configured."
+  "notes": "Development channel with explicit support for jr to ок, uj to го and ye to ну, plus stronger abbreviation, informal-vocabulary, hosting-panel and punctuation-key handling and session-only rejection learning. Automatic updates remain disabled until a signed release channel is configured."
 }

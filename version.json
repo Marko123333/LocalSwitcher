@@ -1,7 +1,7 @@
 {
-  "version": "0.1.3",
-  "build": "4",
+  "version": "0.1.4",
+  "build": "5",
   "dev": "dev",
   "url": "https://github.com/Marko123333/LocalSwitcher",
-  "notes": "Short Russian words, abbreviations, informal vocabulary and hosting-panel names convert more reliably. Punctuation keys can become target letters when evidence is strong, and deleting a correction creates a session-only override."
+  "notes": "Short Russian chat replies convert more reliably, including jr to ок, uj to го and ye to ну. Abbreviations, informal vocabulary, hosting-panel names, punctuation-letter keys and session-only correction rejection remain supported."
 }

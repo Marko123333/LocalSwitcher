@@ -10,6 +10,14 @@ struct HighConfidenceLexiconTests {
         #expect(HighConfidenceLexicon.contains("ISP", language: "en"))
         #expect(HighConfidenceLexicon.contains("ispmanager", language: "en"))
         #expect(HighConfidenceLexicon.contains("inst", language: "en"))
+        #expect(HighConfidenceLexicon.contains("aaPanel", language: "en"))
+    }
+
+    @Test func recognizesRussianAbbreviationsAndInformalVocabulary() {
+        for word in ["руб", "рус", "хуй", "блядь", "пиздец", "заебись"] {
+            #expect(HighConfidenceLexicon.contains(word, language: "ru"))
+        }
+        #expect(!HighConfidenceLexicon.contains("питух", language: "ru"))
     }
 
     @Test func doesNotLeakTermsAcrossLanguages() {

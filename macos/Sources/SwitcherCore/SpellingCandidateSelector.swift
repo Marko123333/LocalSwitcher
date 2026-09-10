@@ -5,6 +5,7 @@ import Foundation
 public enum SpellingCandidateSelector {
     private static let shortTypos: [String: String] = [
         "adn": "and",
+        "питух": "петух",
         "teh": "the",
     ]
 

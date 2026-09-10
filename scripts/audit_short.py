@@ -22,7 +22,12 @@ def img_ru_to_en(w): return "".join(RU2EN.get(c, "?") for c in w)
 
 # ---- lists under test (must match ShortWords.swift) ----
 SHORT_RU = set("не ты на он мы вы да но за бы же из ну по то от их ее её со ли ни об ей во им ко те та уж ок эй".split())
-SHORT_EN = set("to it of is in we me he my on do no be so go if up at as an us or by am ok hi oh ah um mr ya vs dj kb jr bp ye ds".split())
+SHORT_EN = set("to it of is in we me he my on do no be so go if up at as an us or by am ok hi oh ah um mr ya vs dj kb jr bp ds".split())
+
+# Product preference: lowercase `ye` is deliberately treated as the mistyped
+# Russian word «ну». Keep the exception explicit so the audit still catches
+# every other accidental collision.
+FORCED_EN_TO_RU = {"ye"}
 
 # ---- reference of REAL 2-letter tokens (words + common abbreviations) ----
 # English: Scrabble TWL two-letter words + abbreviations common in prose.
@@ -39,6 +44,8 @@ REF_RU = set(("не ни но на ну ты вы мы он да за до по 
 def check(name, ref, own, other_list, img):
     risks = []
     for t in sorted(ref):
+        if name.startswith("EN->RU") and t in FORCED_EN_TO_RU:
+            continue
         c = img(t)
         if "?" in c:
             continue

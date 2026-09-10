@@ -12,6 +12,7 @@ struct SpellingCandidateSelectorTests {
     @Test func supportsCuratedShortTypos() {
         #expect(SpellingCandidateSelector.best(original: "teh", guesses: []) == "the")
         #expect(SpellingCandidateSelector.best(original: "adn", guesses: []) == "and")
+        #expect(SpellingCandidateSelector.best(original: "питух", guesses: ["питых"]) == "петух")
     }
 
     @Test func rejectsRiskySuggestions() {

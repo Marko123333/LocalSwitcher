@@ -80,6 +80,28 @@ enum LayoutVerdict { case switchToConverted, keep, undecided }
 /// Решает, набрано ли слово в неправильной раскладке. Точность важнее полноты:
 /// при любой неуверенности → .undecided (ничего не делаем). Ручной триггер остаётся.
 enum LayoutDetector {
+    /// Some physical keys are punctuation in the active layout but letters in
+    /// the opposite one (`he,` -> `руб`, `gbne[` -> `питух`). Keep the full
+    /// key sequence when the opposite side has an explicit curated match or a
+    /// safe one-edit spelling correction. Ordinary ambiguous punctuation such
+    /// as `levf.` remains on the conservative split-and-check path.
+    static func prefersWholeToken(
+        typed: String,
+        converted: String,
+        currentLang: String,
+        otherLang: String,
+        convertedHasSafeCorrection: Bool
+    ) -> Bool {
+        guard !typed.allSatisfy({ $0.isLetter }),
+              converted.count >= 2,
+              converted.allSatisfy({ $0.isLetter }) else { return false }
+
+        let convertedCurated = HighConfidenceLexicon.contains(converted, language: otherLang)
+        let typedCurated = HighConfidenceLexicon.contains(typed, language: currentLang)
+        if convertedCurated != typedCurated { return convertedCurated }
+        return converted.count >= 4 && convertedHasSafeCorrection
+    }
+
     @MainActor
     static func decide(typed: String, converted: String, currentLang: String, otherLang: String, capsLock: Bool) -> LayoutVerdict {
         // always-convert — ЯВНЫЙ override: матчим по СКОНВЕРТИРОВАННОЙ (целевой) форме.

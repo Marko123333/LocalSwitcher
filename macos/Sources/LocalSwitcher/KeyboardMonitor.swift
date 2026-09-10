@@ -136,6 +136,9 @@ final class KeyboardMonitor: @unchecked Sendable {
     private(set) var boundaryCount = 0
     /// Были ли реальные нажатия после последней конвертации?
     private(set) var keysTypedSinceConversion = true
+    /// Автоконверсия срабатывает после пробела, поэтому первый Backspace обычно удаляет
+    /// лишь этот пробел. Отказом считаем второй подряд Backspace (уже вход в слово).
+    private var backspacesAfterConversion: Int?
 
     /// Нажатия набираемого слова — для движка перепечатки (без буфера обмена)
     private(set) var currentWordKeys: [TypedKey] = []
@@ -158,6 +161,9 @@ final class KeyboardMonitor: @unchecked Sendable {
     private var onAltReconvert: (() -> Void)?
     /// Авто-конвертация: вызывается (async) на границе слова, когда включён autoConvert.
     var onWordBoundary: (() -> Void)?
+    /// Первый Backspace/Cmd+Z сразу после нашей автозамены означает, что пользователь
+    /// отверг исправление. AppDelegate временно запомнит исходное написание.
+    var onRejectLastConversion: (() -> Void)?
     /// issue #10: любой ввод/клик пользователя — чтобы спрятать флаг у каретки во время печати.
     var onUserInput: (() -> Void)?
     /// issue #10: включена ли фича флага-у-каретки. Гейтит диспатч onUserInput на горячем пути,
@@ -290,6 +296,7 @@ final class KeyboardMonitor: @unchecked Sendable {
         prevWordKeys = []
         lineKeys = []
         keysTypedSinceConversion = false
+        backspacesAfterConversion = 0
     }
 
     /// issue #24 / скептик 3.2.0: системная смена раскладки (globe / Ctrl-Space) не проходит через
@@ -325,20 +332,21 @@ final class KeyboardMonitor: @unchecked Sendable {
         lastTapTime = nil
         switchLastTapTime = nil
         keysTypedSinceConversion = true
+        backspacesAfterConversion = nil
         if caretFlagEnabled { DispatchQueue.main.async { [weak self] in self?.onUserInput?() } }   // issue #10: клик прячет флаг у каретки
         fullReset()
     }
 
     // MARK: - Event Handling
 
-    fileprivate func handleKeyDown(keyCode: UInt16, flags: CGEventFlags, char: Character? = nil) {
+    func handleKeyDown(keyCode: UInt16, flags: CGEventFlags, char: Character? = nil) {
         let frontBundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
         if let previous = inputBundleID, previous != frontBundleID {
             rslog("input focus changed: reset buffers")
+            backspacesAfterConversion = nil
             fullReset()
         }
         inputBundleID = frontBundleID
-
         if TriggerConfig.sharedShiftGesturesEnabled {
             // Если после одиночного Shift пользователь уже печатает, меняем
             // раскладку сейчас, до доставки этого keyDown в приложение.
@@ -352,6 +360,9 @@ final class KeyboardMonitor: @unchecked Sendable {
         lastTapTime = nil
         switchLastTapTime = nil
         keysTypedSinceConversion = true
+        let isUndo = keyCode == 6
+            && flags.contains(.maskCommand)
+            && !flags.contains(.maskShift)
         if caretFlagEnabled { DispatchQueue.main.async { [weak self] in self?.onUserInput?() } }   // issue #10: спрятать флаг при печати
 
         // Удалёнка: Screen Sharing шлёт проброшенные символы как keyCode 0 + юникод. Перехватываем
@@ -365,9 +376,15 @@ final class KeyboardMonitor: @unchecked Sendable {
             // Локальный аналог этого guard — ниже, на ветке модификаторов (PR #13).
             let modifiers = flags.intersection([.maskCommand, .maskControl, .maskAlternate])
             if !modifiers.isEmpty { fullReset(); return }
-            if let ch = char { handleForwardedChar(ch) }
+            if let ch = char {
+                let isBackspace = ch == "\u{8}" || ch == "\u{7f}"
+                trackPossibleCorrectionRejection(isBackspace: isBackspace, isUndo: false)
+                handleForwardedChar(ch)
+            }
             return
         }
+
+        trackPossibleCorrectionRejection(isBackspace: keyCode == KC.backspace, isUndo: isUndo)
 
         // Структурные клавиши обрабатываем ВСЕГДА, даже если в flags остался
         // «грязный» модификатор (stale .maskAlternate и т.п.) — иначе счётчик
@@ -489,6 +506,29 @@ final class KeyboardMonitor: @unchecked Sendable {
         // «ghbdtn,» по удалёнке = 6 букв в буфере при 7 символах в поле → стёрся бы лишний).
         // Консервативно сбрасываем: слово с пунктуацией по удалёнке просто не авто-конвертится.
         fullReset()
+    }
+
+    private func trackPossibleCorrectionRejection(isBackspace: Bool, isUndo: Bool) {
+        guard let previousBackspaces = backspacesAfterConversion else { return }
+        if isUndo {
+            backspacesAfterConversion = nil
+            let callback = onRejectLastConversion
+            DispatchQueue.main.async { callback?() }
+            return
+        }
+        guard isBackspace else {
+            backspacesAfterConversion = nil
+            return
+        }
+
+        let count = previousBackspaces + 1
+        if count >= 2 {
+            backspacesAfterConversion = nil
+            let callback = onRejectLastConversion
+            DispatchQueue.main.async { callback?() }
+        } else {
+            backspacesAfterConversion = count
+        }
     }
 
     /// issue #7: на первой букве после смены раскладки даём короткий звук, зависящий от

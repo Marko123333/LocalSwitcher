@@ -87,9 +87,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: - Learn-from-undo (предложить добавить слово в never-convert)
 
-    /// Последняя авто-конвертация: слово (как было набрано) + время. Если пользователь
-    /// сразу откатывает ручным триггером — предлагаем занести слово в исключения.
-    private var lastAutoConverted: (word: String, at: Date)?
+    /// Последняя авто-конвертация: исходный ввод, эквиваленты после смены раскладки и время.
+    /// Нужна и для ручного отката, и для распознавания немедленного Backspace/Cmd+Z.
+    private var lastAutoConverted: (word: String, alternatives: Set<String>, at: Date)?
+    /// Если пользователь сразу удаляет нашу замену, не спорим с ним повторно в этой сессии.
+    private var sessionCorrectionSuppression = SessionCorrectionSuppression()
     /// Анти-наг: за сессию про одно слово спрашиваем один раз.
     private var offeredExceptionWords: Set<String> = []
 
@@ -130,6 +132,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             SettingsManager.shared.deniedWords = list
             rslog("learn: added word (len=\(word.count)) to never-convert")
         }
+    }
+
+    private func recordAutoConversion(_ word: String, alternatives: [String] = []) {
+        lastAutoConverted = (
+            word: word,
+            alternatives: Set(alternatives.map { $0.lowercased() }),
+            at: Date()
+        )
+    }
+
+    private func rejectLastAutoConversion() {
+        guard let last = lastAutoConverted,
+              Date().timeIntervalSince(last.at) < 12 else {
+            lastAutoConverted = nil
+            return
+        }
+        sessionCorrectionSuppression.remember(
+            original: last.word,
+            alternatives: last.alternatives
+        )
+        lastAutoConverted = nil
+        rslog("auto: user rejected correction; session override added")
     }
 
     private func startPerAppLayout() {
@@ -409,6 +433,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         keyboardMonitor.onWordBoundary = { [weak self] in
             self?.handleAutoConvert()
         }
+        keyboardMonitor.onRejectLastConversion = { [weak self] in
+            self?.rejectLastAutoConversion()
+        }
         keyboardMonitor.onUserInput = { [weak self] in self?.caretIndicator?.userTyped() }  // issue #10
         // issue #14: хоткей чистого переключения раскладки (без конверсии). Буфер после
         // явной смены раскладки неактуален — тот же паттерн, что per-app restore и меню.
@@ -509,6 +536,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let bc = keyboardMonitor.boundaryCount
         guard !allKeys.isEmpty else { rslog("auto: bail empty-keys"); return }  // курсор уехал — небезопасно
         guard let fullPair = DynamicKeyMapping.convertKeys(allKeys) else { rslog("auto: bail convertKeys-nil"); return }
+        if sessionCorrectionSuppression.contains(fullPair.original) {
+            rslog("auto: bail session-user-override")
+            return
+        }
+
+        // Язык для детектора. Для проброшенного через удалёнку текста (все символы — char)
+        // направление определяем по СКРИПТУ набранного, а не по раскладке офисной машины.
+        let langs: (current: String, opposite: String)
+        if allKeys.allSatisfy({ $0.char != nil }) {
+            let typedIsCyrillic = fullPair.original.unicodeScalars.contains {
+                $0.value >= 0x0400 && $0.value <= 0x04FF
+            }
+            langs = typedIsCyrillic ? ("ru", "en") : ("en", "ru")
+        } else if let resolved = LayoutSwitcher.currentAndOppositeLanguage() {
+            langs = resolved
+        } else {
+            rslog("auto: bail langs-nil"); return
+        }
 
         // issue #15: слово с прилипшей пунктуацией ("ghbdtn,") — отщепляем хвост, детектим
         // и конвертим ядро, хвост вернётся в поле литералом. Проверка счёта — инвариант
@@ -516,7 +561,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         var keys = allKeys
         var suffix = ""
         let split = LayoutDetector.splitTrailingPunctuation(fullPair.original)
-        if !split.suffix.isEmpty, split.coreLength > 0, fullPair.original.count == allKeys.count {
+        let fullConvertedCurated = HighConfidenceLexicon.contains(
+            fullPair.converted,
+            language: langs.opposite
+        )
+        // The early spelling lookup is needed only to resolve a punctuation-key
+        // ambiguity. Ordinary words stay on the cheap dictionary-decision path.
+        let fullTargetCorrection = !split.suffix.isEmpty
+            && !fullConvertedCurated
+            && fullPair.converted.allSatisfy({ $0.isLetter })
+            ? Dict.bestCorrection(fullPair.converted, lang: langs.opposite)
+            : nil
+        let keepFullToken = LayoutDetector.prefersWholeToken(
+            typed: fullPair.original,
+            converted: fullPair.converted,
+            currentLang: langs.current,
+            otherLang: langs.opposite,
+            convertedHasSafeCorrection: fullTargetCorrection != nil
+        )
+        if !keepFullToken,
+           !split.suffix.isEmpty, split.coreLength > 0,
+           fullPair.original.count == allKeys.count {
             keys = Array(allKeys.prefix(split.coreLength))
             suffix = split.suffix
         }
@@ -524,20 +589,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             rslog("auto: bail convertKeys-nil"); return
         }
         if AutoSwitchPolicy.isDeniedWord(pair.original, pair.converted) { rslog("auto: bail denied-word"); return }
-
-        // Язык для детектора. Для проброшенного через удалёнку текста (все символы — char)
-        // направление определяем по СКРИПТУ набранного, а не по раскладке офисной машины:
-        // на офисе раскладка может не соответствовать тому, что напечатали на контроллере,
-        // и тогда decide ошибочно даёт keep (это и есть «авто в удалёнке не работает»).
-        let langs: (current: String, opposite: String)
-        if keys.allSatisfy({ $0.char != nil }) {
-            let typedIsCyrillic = pair.original.unicodeScalars.contains { $0.value >= 0x0400 && $0.value <= 0x04FF }
-            langs = typedIsCyrillic ? ("ru", "en") : ("en", "ru")
-        } else if let l = LayoutSwitcher.currentAndOppositeLanguage() {
-            langs = l
-        } else {
-            rslog("auto: bail langs-nil"); return
-        }
 
         // Same-language polish runs before layout detection. It only applies a
         // capitalization fix when the result is a known word and restores ё
@@ -552,7 +603,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 if suffix.isEmpty,
                    textConverter.convertSpotlightWord(converted: polishedOriginal, boundaryCount: bc) {
                     keyboardMonitor.markConverted()
-                    lastAutoConverted = (pair.original, Date())
+                    recordAutoConversion(pair.original)
                 }
                 return
             }
@@ -564,7 +615,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 passthroughSuffix: suffix
             ) {
                 keyboardMonitor.markConverted()
-                lastAutoConverted = (pair.original, Date())
+                recordAutoConversion(pair.original)
             }
             return
         }
@@ -601,6 +652,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                             capsLock: capsLock)
         rslog("auto: len=\(pair.original.count) \(langs.current)/\(langs.opposite) verdict=\(verdict)")  // слова не логируем (приватность)
         guard verdict == .switchToConverted else {
+            // Caramba-like path: the source is gibberish in the active language, while its
+            // layout image is exactly one safe edit away from a target-language word.
+            // This handles `gbne[` -> `питух` -> `петух`, including the `[`/`х`
+            // punctuation-key ambiguity, without enabling broad fuzzy conversion.
+            let targetSpelling = suffix.isEmpty
+                ? (fullTargetCorrection ?? Dict.bestCorrection(pair.converted, lang: langs.opposite))
+                : nil
+            let sourceConfidence: Dict.Confidence = pair.original.allSatisfy({ $0.isLetter })
+                ? Dict.confidence(pair.original.lowercased(), lang: langs.current)
+                : .absent
+            if let targetSpelling,
+               sourceConfidence == .absent,
+               !AutoSwitchPolicy.isDeniedWord(pair.original, targetSpelling),
+               !deferToRemote {
+                let polishedTarget = polishWord(targetSpelling, language: langs.opposite)
+                if SpotlightAX.isActive() {
+                    if textConverter.convertSpotlightWord(converted: polishedTarget, boundaryCount: bc) {
+                        keyboardMonitor.markConverted()
+                        LayoutSwitcher.switchToOpposite()
+                        updateStatusIcon()
+                        recordAutoConversion(pair.original, alternatives: [pair.converted])
+                    }
+                    return
+                }
+                if textConverter.replace(
+                    wordKeys: [],
+                    prevWordKeys: keys,
+                    boundaryCount: bc,
+                    with: polishedTarget,
+                    passthroughSuffix: ""
+                ) {
+                    keyboardMonitor.markConverted()
+                    LayoutSwitcher.switchToOpposite()
+                    updateStatusIcon()
+                    recordAutoConversion(pair.original, alternatives: [pair.converted])
+                }
+                return
+            }
+
             guard let spelling = Dict.bestCorrection(pair.original, lang: langs.current),
                   !AutoSwitchPolicy.isDeniedWord(pair.original, spelling),
                   !deferToRemote else { return }
@@ -609,7 +699,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 if suffix.isEmpty,
                    textConverter.convertSpotlightWord(converted: polishedSpelling, boundaryCount: bc) {
                     keyboardMonitor.markConverted()
-                    lastAutoConverted = (pair.original, Date())
+                    recordAutoConversion(pair.original)
                 }
                 return
             }
@@ -621,7 +711,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 passthroughSuffix: suffix
             ) {
                 keyboardMonitor.markConverted()
-                lastAutoConverted = (pair.original, Date())
+                recordAutoConversion(pair.original)
             }
             return
         }
@@ -646,7 +736,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 keyboardMonitor.markConverted()
                 LayoutSwitcher.switchToOpposite()
                 updateStatusIcon()
-                lastAutoConverted = (pair.original, Date())
+                recordAutoConversion(pair.original, alternatives: [pair.converted])
             }
             return   // Spotlight: обычный count-путь неприменим
         }
@@ -658,7 +748,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             keyboardMonitor.markConverted()
             LayoutSwitcher.switchToOpposite()
             updateStatusIcon()
-            lastAutoConverted = (pair.original, Date())
+            recordAutoConversion(pair.original, alternatives: [pair.converted])
         }
     }
 

@@ -1,7 +1,7 @@
 {
-  "version": "0.1.2b",
-  "build": "3",
+  "version": "0.1.3b",
+  "build": "4",
   "dev": "dev",
   "url": "https://github.com/Marko123333/LocalSwitcher",
-  "notes": "Development channel with dotted technical-token correction and completed project support/contact links. Automatic updates remain disabled until a signed release channel is configured."
+  "notes": "Development channel with stronger short-word, abbreviation, informal-vocabulary, hosting-panel and punctuation-key handling plus session-only rejection learning. Automatic updates remain disabled until a signed release channel is configured."
 }

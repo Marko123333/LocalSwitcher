@@ -131,6 +131,96 @@ struct LayoutRegressionTests {
         ) == .keep)
     }
 
+    @Test @MainActor func convertsRussianNuFromEnglishYe() {
+        #expect(KeyMapping.convert("ye") == "ну")
+        #expect(LayoutDetector.decide(
+            typed: "ye",
+            converted: "ну",
+            currentLang: "en",
+            otherLang: "ru",
+            capsLock: false
+        ) == .switchToConverted)
+    }
+
+    @Test @MainActor func convertsRussianAbbreviationsAndProfanityFromEnglishLayout() {
+        for target in ["руб", "рус", "хуй", "блядь", "пиздец"] {
+            let typed = KeyMapping.convert(target)
+            #expect(LayoutDetector.decide(
+                typed: typed,
+                converted: target,
+                currentLang: "en",
+                otherLang: "ru",
+                capsLock: false
+            ) == .switchToConverted)
+        }
+        #expect(KeyMapping.convert("руб") == "he,")
+        #expect(KeyMapping.convert("хуй") == "[eq")
+    }
+
+    @Test @MainActor func convertsAaPanelFromRussianLayout() {
+        let typed = KeyMapping.convert("aapanel")
+        #expect(typed == "ффзфтуд")
+        #expect(LayoutDetector.decide(
+            typed: typed,
+            converted: "aapanel",
+            currentLang: "ru",
+            otherLang: "en",
+            capsLock: false
+        ) == .switchToConverted)
+    }
+
+    @Test @MainActor func treatsPunctuationKeyAsTargetLetterOnlyWithStrongEvidence() {
+        #expect(LayoutDetector.prefersWholeToken(
+            typed: "he,",
+            converted: "руб",
+            currentLang: "en",
+            otherLang: "ru",
+            convertedHasSafeCorrection: false
+        ))
+        #expect(LayoutDetector.prefersWholeToken(
+            typed: "gbne[",
+            converted: "питух",
+            currentLang: "en",
+            otherLang: "ru",
+            convertedHasSafeCorrection: true
+        ))
+        #expect(!LayoutDetector.prefersWholeToken(
+            typed: "levf.",
+            converted: "думаю",
+            currentLang: "en",
+            otherLang: "ru",
+            convertedHasSafeCorrection: false
+        ))
+        #expect(Dict.bestCorrection("питух", lang: "ru") == "петух")
+    }
+
+    @Test func remembersRejectedCorrectionForTheCurrentSession() {
+        var suppression = SessionCorrectionSuppression()
+        suppression.remember(original: "gbne[", alternatives: ["питух"])
+        #expect(suppression.contains("GBNE["))
+        #expect(suppression.contains("ПИТУХ"))
+        #expect(!suppression.contains("петух"))
+    }
+
+    @Test @MainActor func deletingIntoCorrectionRejectsOnlyTheLastConversion() async {
+        let monitor = KeyboardMonitor()
+        var rejectionCount = 0
+        monitor.onRejectLastConversion = { rejectionCount += 1 }
+        monitor.markConverted()
+
+        monitor.handleKeyDown(keyCode: KC.backspace, flags: [])
+        await Task.yield()
+        #expect(rejectionCount == 0) // first Backspace removes the triggering space
+
+        monitor.handleKeyDown(keyCode: KC.backspace, flags: [])
+        await Task.yield()
+        #expect(rejectionCount == 1)
+
+        monitor.handleKeyDown(keyCode: KC.backspace, flags: [])
+        await Task.yield()
+        #expect(rejectionCount == 1)
+    }
+
     @Test @MainActor func convertsEnglishArticlesFromRussianLayout() {
         for (typed, converted) in [("ф", "a"), ("ш", "i")] {
             #expect(LayoutDetector.decide(

@@ -1,7 +1,7 @@
 {
-  "version": "0.1.6b",
-  "build": "7",
+  "version": "0.1.7b",
+  "build": "8",
   "dev": "dev",
   "url": "https://github.com/Marko123333/LocalSwitcher",
-  "notes": "Development channel with safer same-language spelling correction and reliable tot -> еще -> ещё conversion from the English layout. Automatic updates remain disabled until a signed release channel is configured."
+  "notes": "Development channel with general Russian hyphenated-word conversion, тд and uppercase Russian one-letter words. Automatic updates remain disabled until a signed release channel is configured."
 }

@@ -1,7 +1,7 @@
 {
-  "version": "0.1.6",
-  "build": "7",
+  "version": "0.1.7",
+  "build": "8",
   "dev": "dev",
   "url": "https://github.com/Marko123333/LocalSwitcher",
-  "notes": "Stops fuzzy spelling correction from rewriting known Russian words such as скачивание, while preserving explicitly reviewed typo fixes. Adds reliable tot -> еще -> ещё conversion from the English layout."
+  "notes": "Adds dictionary-backed conversion for general Russian hyphenated words, including capitalization and punctuation-key letters, while preserving real English compounds. Also recognizes тд and uppercase Russian one-letter words such as И."
 }

@@ -93,6 +93,7 @@ enum LayoutDetector {
     /// key sequence when the opposite side has an explicit curated match or a
     /// safe one-edit spelling correction. Ordinary ambiguous punctuation such
     /// as `levf.` remains on the conservative split-and-check path.
+    @MainActor
     static func prefersWholeToken(
         typed: String,
         converted: String,
@@ -100,6 +101,28 @@ enum LayoutDetector {
         otherLang: String,
         convertedHasSafeCorrection: Bool
     ) -> Bool {
+        // In a hyphenated token, ordinary sentence punctuation is much more likely
+        // to be literal (`xnj-nj,` -> `что-то,`) than an extra target-layout letter.
+        // Bracket/backtick keys remain eligible below because they represent the
+        // common Russian letters х/ъ/ё and rarely terminate an unpaired token.
+        let trailing = splitTrailingPunctuation(typed).suffix
+        let commonSentencePunctuation: Set<Character> = [",", ".", "!", "?", ";", ":", ")"]
+        if typed.contains("-"),
+           let firstTrailing = trailing.first,
+           commonSentencePunctuation.contains(firstTrailing) {
+            return false
+        }
+
+        if hyphenatedVerdict(
+            typed: typed,
+            converted: converted,
+            currentLang: currentLang,
+            otherLang: otherLang,
+            allowBundledComponents: false
+        ) == .switchToConverted {
+            return true
+        }
+
         guard !typed.allSatisfy({ $0.isLetter }),
               converted.count >= 2,
               converted.allSatisfy({ $0.isLetter }) else { return false }
@@ -130,6 +153,20 @@ enum LayoutDetector {
             return convertedCurated ? .switchToConverted : .keep
         }
 
+        // A hyphen is part of many ordinary words, not automatically a code marker.
+        // Accept a layout flip only when every component on exactly one side is a
+        // known word. This converts `xnj-nj` -> `что-то` and `ult-nj` -> `где-то`,
+        // while preserving real English compounds such as `well-known`.
+        if let hyphenated = hyphenatedVerdict(
+            typed: typed,
+            converted: converted,
+            currentLang: cur,
+            otherLang: oth,
+            allowBundledComponents: true
+        ) {
+            return hyphenated
+        }
+
         // Product/runtime names with an internal dot are not accepted by normal
         // spellcheckers. A small exact lexicon handles `тщвуюоы` -> `node.js`
         // (and the reverse keep decision) without opening a broad URL/domain rule.
@@ -147,14 +184,16 @@ enum LayoutDetector {
         // Одиночные буквы исправляем только по закрытым спискам реальных слов: например,
         // `b` -> `и`, `d` -> `в`, `ф` -> `a`. Это важный переход после английского
         // технического термина (`ssh b nginx`), где словарного контекста самого токена нет.
-        // Верхний регистр не трогаем: standalone B/C и похожие обозначения слишком часты.
+        // Проверяем без учёта регистра, поэтому `B` -> `И` работает в начале предложения.
         if typed.count == 1 {
-            guard typed == typed.lowercased(), converted == converted.lowercased(),
-                  typed.allSatisfy({ $0.isLetter }), converted.allSatisfy({ $0.isLetter }) else {
+            guard typed.allSatisfy({ $0.isLetter }), converted.allSatisfy({ $0.isLetter }) else {
                 return .undecided
             }
-            if let current = oneLetterWords(cur), current.contains(typed) { return .keep }
-            return oneLetterWords(oth)?.contains(converted) == true ? .switchToConverted : .undecided
+            let normalizedTyped = typed.lowercased()
+            let normalizedConverted = converted.lowercased()
+            if let current = oneLetterWords(cur), current.contains(normalizedTyped) { return .keep }
+            return oneLetterWords(oth)?.contains(normalizedConverted) == true
+                ? .switchToConverted : .undecided
         }
         // Обычный путь — набранное целиком буквенное. Плюс (issue #22, п.3) случай «буквы
         // на клавишах-пунктуации»: ё/х/ъ/ж/э/б/ю в ЙЦУКЕН живут на ` [ ] ; ' , . — тогда
@@ -238,6 +277,68 @@ enum LayoutDetector {
         case "en": ["a", "i"]
         default: nil
         }
+    }
+
+    @MainActor
+    private static func hyphenatedVerdict(
+        typed: String,
+        converted: String,
+        currentLang: String,
+        otherLang: String,
+        allowBundledComponents: Bool
+    ) -> LayoutVerdict? {
+        guard typed.contains("-") || converted.contains("-") else { return nil }
+
+        let typedParts = typed.split(separator: "-", omittingEmptySubsequences: false).map(String.init)
+        let convertedParts = converted.split(separator: "-", omittingEmptySubsequences: false).map(String.init)
+        guard typedParts.count == convertedParts.count,
+              typedParts.count >= 2,
+              typedParts.allSatisfy({ !$0.isEmpty }),
+              convertedParts.allSatisfy({ !$0.isEmpty }) else {
+            return .undecided
+        }
+
+        let typedAlphabetic = typedParts.allSatisfy { $0.allSatisfy(\.isLetter) }
+        let convertedAlphabetic = convertedParts.allSatisfy { $0.allSatisfy(\.isLetter) }
+        guard typedAlphabetic || convertedAlphabetic else { return .undecided }
+
+        let typedKnown = typedAlphabetic && typedParts.allSatisfy {
+            isKnownCompoundComponent(
+                $0,
+                language: currentLang,
+                allowBundled: allowBundledComponents
+            )
+        }
+        let convertedKnown = convertedAlphabetic && convertedParts.allSatisfy {
+            isKnownCompoundComponent(
+                $0,
+                language: otherLang,
+                allowBundled: allowBundledComponents
+            )
+        }
+        if typedKnown != convertedKnown {
+            return convertedKnown ? .switchToConverted : .keep
+        }
+        return typedKnown ? .keep : .undecided
+    }
+
+    @MainActor
+    private static func isKnownCompoundComponent(
+        _ component: String,
+        language: String,
+        allowBundled: Bool
+    ) -> Bool {
+        let normalized = component.lowercased()
+        if HighConfidenceLexicon.contains(normalized, language: language) { return true }
+        if normalized.count == 1 {
+            return oneLetterWords(language)?.contains(normalized) == true
+        }
+        if normalized.count == 2 {
+            return ShortWords.common(language)?.contains(normalized) == true
+        }
+
+        let confidence = Dict.confidence(normalized, lang: language)
+        return confidence != .absent && (allowBundled || confidence != .bundled)
     }
 
     /// issue #15: отщепляет прилипшую к концу слова пунктуацию ("ghbdtn," → ядро 6 + ",").

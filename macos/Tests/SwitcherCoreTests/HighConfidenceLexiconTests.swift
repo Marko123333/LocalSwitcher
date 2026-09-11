@@ -16,7 +16,7 @@ struct HighConfidenceLexiconTests {
     }
 
     @Test func recognizesRussianAbbreviationsAndInformalVocabulary() {
-        for word in ["руб", "рус", "хуй", "блядь", "пиздец", "заебись"] {
+        for word in ["руб", "рус", "тд", "хуй", "блядь", "пиздец", "заебись"] {
             #expect(HighConfidenceLexicon.contains(word, language: "ru"))
         }
         #expect(!HighConfidenceLexicon.contains("питух", language: "ru"))

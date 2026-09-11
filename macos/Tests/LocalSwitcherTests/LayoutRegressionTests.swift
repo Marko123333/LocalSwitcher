@@ -134,6 +134,86 @@ struct LayoutRegressionTests {
         #expect(BundledRussianLexicon.makeYoRestorer().restore("еще") == .restored("ещё"))
     }
 
+    @Test @MainActor func convertsRussianHyphenatedWordsFromEnglishLayout() {
+        for target in [
+            "что-то", "Что-то", "ЧТО-ТО", "где-то", "из-за", "кто-нибудь",
+            "когда-нибудь", "какой-либо", "по-моему", "во-первых",
+            "онлайн-магазин", "давным-давно",
+        ] {
+            let typed = KeyMapping.convert(target)
+            #expect(LayoutDetector.decide(
+                typed: typed,
+                converted: target,
+                currentLang: "en",
+                otherLang: "ru",
+                capsLock: false
+            ) == .switchToConverted, "Failed hyphenated target: \(target)")
+        }
+
+        #expect(KeyMapping.convert("что-то") == "xnj-nj")
+        #expect(KeyMapping.convert("где-то") == "ult-nj")
+        #expect(LayoutDetector.decide(
+            typed: "что-то",
+            converted: "xnj-nj",
+            currentLang: "ru",
+            otherLang: "en",
+            capsLock: false
+        ) == .keep)
+        let punctuated = LayoutDetector.splitTrailingPunctuation("xnj-nj,")
+        #expect(punctuated.coreLength == 6)
+        #expect(punctuated.suffix == ",")
+
+        let endingOnPunctuationKey = KeyMapping.convert("во-первых")
+        #expect(endingOnPunctuationKey == "dj-gthds[")
+        #expect(LayoutDetector.prefersWholeToken(
+            typed: endingOnPunctuationKey,
+            converted: "во-первых",
+            currentLang: "en",
+            otherLang: "ru",
+            convertedHasSafeCorrection: false
+        ))
+
+        #expect(!LayoutDetector.prefersWholeToken(
+            typed: "xnj-nj,",
+            converted: KeyMapping.convert("xnj-nj,"),
+            currentLang: "en",
+            otherLang: "ru",
+            convertedHasSafeCorrection: false
+        ))
+    }
+
+    @Test @MainActor func keepsRealEnglishHyphenatedWords() {
+        for word in ["well-known", "state-of-the-art"] {
+            #expect(LayoutDetector.decide(
+                typed: word,
+                converted: KeyMapping.convert(word),
+                currentLang: "en",
+                otherLang: "ru",
+                capsLock: false
+            ) == .keep)
+
+            let typedInRussianLayout = KeyMapping.convert(word)
+            #expect(LayoutDetector.decide(
+                typed: typedInRussianLayout,
+                converted: word,
+                currentLang: "ru",
+                otherLang: "en",
+                capsLock: false
+            ) == .switchToConverted)
+        }
+    }
+
+    @Test @MainActor func convertsRussianEtCeteraAbbreviationFromEnglishLayout() {
+        #expect(KeyMapping.convert("тд") == "nl")
+        #expect(LayoutDetector.decide(
+            typed: "nl",
+            converted: "тд",
+            currentLang: "en",
+            otherLang: "ru",
+            capsLock: false
+        ) == .switchToConverted)
+    }
+
     @Test @MainActor func convertsRussianConjunctionFromEnglishLayout() {
         for (typed, converted) in [("b", "и"), ("d", "в"), ("c", "с"), ("r", "к"),
                                    ("j", "о"), ("e", "у"), ("f", "а"), ("z", "я")] {
@@ -152,13 +232,16 @@ struct LayoutRegressionTests {
             otherLang: "ru",
             capsLock: false
         ) == .keep)
-        #expect(LayoutDetector.decide(
-            typed: "B",
-            converted: "И",
-            currentLang: "en",
-            otherLang: "ru",
-            capsLock: false
-        ) == .undecided)
+        for target in ["А", "В", "И", "К", "О", "С", "У", "Я"] {
+            #expect(LayoutDetector.decide(
+                typed: KeyMapping.convert(target),
+                converted: target,
+                currentLang: "en",
+                otherLang: "ru",
+                capsLock: false
+            ) == .switchToConverted, "Failed uppercase one-letter word: \(target)")
+        }
+        #expect(KeyMapping.convert("И") == "B")
     }
 
     @Test @MainActor func convertsDottedTechnicalNameFromRussianLayout() {

@@ -1,7 +1,7 @@
 {
-  "version": "0.1.7",
-  "build": "8",
+  "version": "0.1.8",
+  "build": "9",
   "dev": "dev",
   "url": "https://github.com/Marko123333/LocalSwitcher",
-  "notes": "Adds dictionary-backed conversion for general Russian hyphenated words, including capitalization and punctuation-key letters, while preserving real English compounds. Also recognizes тд and uppercase Russian one-letter words such as И."
+  "notes": "Adds a curated Russian-particle lexicon with lowercase, sentence-capitalized and uppercase recognition. Fixes punctuation-key particles such as e; to уж and E; to Уж."
 }

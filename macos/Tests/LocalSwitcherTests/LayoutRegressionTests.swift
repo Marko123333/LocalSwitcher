@@ -244,6 +244,42 @@ struct LayoutRegressionTests {
         #expect(KeyMapping.convert("И") == "B")
     }
 
+    @Test @MainActor func convertsRussianParticlesFromEnglishLayoutInEveryCase() {
+        let targets = [
+            "уж", "же", "бы", "ли", "ль", "ведь", "разве", "неужели",
+            "вот", "вон", "именно", "только", "лишь", "пусть", "пускай",
+            "дескать", "якобы", "мол", "вряд", "едва", "уже", "всё-таки",
+            "опять-таки", "как-никак", "всего-навсего",
+        ]
+
+        for target in targets {
+            let capitalized = target.prefix(1).uppercased() + target.dropFirst()
+            for variant in [target, capitalized, target.uppercased()] {
+                let typed = KeyMapping.convert(variant)
+                #expect(LayoutDetector.decide(
+                    typed: typed,
+                    converted: variant,
+                    currentLang: "en",
+                    otherLang: "ru",
+                    capsLock: variant == variant.uppercased()
+                ) == .switchToConverted, "Failed particle: \(variant) from \(typed)")
+            }
+        }
+
+        #expect(KeyMapping.convert("уж") == "e;")
+        #expect(KeyMapping.convert("Уж") == "E;")
+        #expect(KeyMapping.convert("УЖ") == "E:")
+        for pair in [("e;", "уж"), ("E;", "Уж"), ("E:", "УЖ")] {
+            #expect(LayoutDetector.prefersWholeToken(
+                typed: pair.0,
+                converted: pair.1,
+                currentLang: "en",
+                otherLang: "ru",
+                convertedHasSafeCorrection: false
+            ), "Trailing punctuation key was not retained for \(pair.1)")
+        }
+    }
+
     @Test @MainActor func convertsDottedTechnicalNameFromRussianLayout() {
         for target in ["node.js", "Node.js", "node.js,", "socket.io"] {
             let typed = KeyMapping.convert(target)

@@ -46,9 +46,10 @@ public enum HighConfidenceLexicon {
     ]
 
     public static func contains(_ word: String, language: String) -> Bool {
-        switch language.lowercased().prefix(2) {
-        case "en": english.contains(word.lowercased())
-        case "ru": russian.contains(word.lowercased())
+        let normalized = word.lowercased()
+        return switch language.lowercased().prefix(2) {
+        case "en": english.contains(normalized)
+        case "ru": russian.contains(normalized) || RussianParticles.contains(normalized)
         default: false
         }
     }

@@ -22,6 +22,20 @@ struct HighConfidenceLexiconTests {
         #expect(!HighConfidenceLexicon.contains("питух", language: "ru"))
     }
 
+    @Test func recognizesRussianParticlesCaseInsensitively() {
+        for word in [
+            "уж", "же", "бы", "ли", "ль", "ведь", "разве", "неужели",
+            "вот", "вон", "именно", "только", "лишь", "пусть", "пускай",
+            "дескать", "якобы", "мол", "вряд", "едва", "всё-таки",
+            "опять-таки", "как-никак", "всего-навсего",
+        ] {
+            #expect(RussianParticles.contains(word), "Missing particle: \(word)")
+            #expect(RussianParticles.contains(word.uppercased()), "Missing uppercase particle: \(word)")
+            #expect(HighConfidenceLexicon.contains(word, language: "ru"))
+            #expect(HighConfidenceLexicon.contains(word.uppercased(), language: "ru-RU"))
+        }
+    }
+
     @Test func doesNotLeakTermsAcrossLanguages() {
         #expect(!HighConfidenceLexicon.contains("ssh", language: "ru"))
         #expect(HighConfidenceLexicon.contains("еще", language: "ru"))

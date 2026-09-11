@@ -1,7 +1,7 @@
 {
-  "version": "0.1.7b",
-  "build": "8",
+  "version": "0.1.8b",
+  "build": "9",
   "dev": "dev",
   "url": "https://github.com/Marko123333/LocalSwitcher",
-  "notes": "Development channel with general Russian hyphenated-word conversion, тд and uppercase Russian one-letter words. Automatic updates remain disabled until a signed release channel is configured."
+  "notes": "Development channel with case-insensitive Russian-particle recognition and punctuation-key fixes such as e; to уж. Automatic updates remain disabled until a signed release channel is configured."
 }

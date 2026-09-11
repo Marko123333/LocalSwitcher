@@ -1,7 +1,7 @@
 {
-  "version": "0.1.9b",
-  "build": "10",
+  "version": "0.1.10b",
+  "build": "11",
   "dev": "dev",
   "url": "https://github.com/Marko123333/LocalSwitcher",
-  "notes": "Development channel with modern Russian loanwords, AI terminology and uppercase dictionary recognition. Automatic updates remain disabled until a signed release channel is configured."
+  "notes": "Development channel with Russian abbreviation recognition and punctuation-safe layout detection. Automatic updates remain disabled until a signed release channel is configured."
 }

@@ -5,16 +5,16 @@ import Foundation
 public enum HighConfidenceLexicon {
     private static let english: Set<String> = [
         "aapanel", "admin", "ai", "api", "app", "apps", "asp", "auth", "backend", "bash",
-        "cdn", "ci", "cli", "cms", "config", "crm", "css", "db", "dev",
+        "acc", "cdn", "ci", "cli", "cms", "config", "crm", "css", "ctr", "db", "dep", "dev",
         "dns", "docker", "docs", "erp", "frontend", "ftp", "git", "github",
         "gitlab", "html", "http", "https", "iaas", "ide", "info", "inst",
         "install", "instance", "instagram", "ios", "ipad", "iphone", "ip",
         "isp", "ispmanager", "javascript", "json", "jwt", "kubernetes",
-        "linux", "llm", "macos", "mcp", "ml", "mongodb", "mysql", "nginx", "node",
+        "fce", "linux", "llm", "lng", "macos", "mcp", "ml", "mongodb", "mysql", "nginx", "node", "nsc",
         "nodejs", "npm", "npx", "oauth", "paas", "postgres", "postgresql",
         "prod", "python", "qa", "react", "redis", "repo", "saas", "sdk",
         "sftp", "sql", "ssh", "ssl", "swift", "tcp", "tls", "toml",
-        "typescript", "udp", "ui", "uri", "url", "uuid", "ux", "vds",
+        "tyg", "typescript", "udp", "ui", "uri", "url", "uuid", "ux", "vds",
         "vpn", "vps", "vue", "wifi", "yaml", "zsh", "deno", "express",
         "io", "js", "nest", "net", "next", "nuxt", "socket", "three", "ts",
         "cloudpanel", "coolify", "cpanel", "cyberpanel", "directadmin",
@@ -54,6 +54,7 @@ public enum HighConfidenceLexicon {
         return switch language.lowercased().prefix(2) {
         case "en": english.contains(normalized)
         case "ru": russian.contains(normalized)
+            || RussianAbbreviations.contains(normalized)
             || RussianParticles.contains(normalized)
             || ModernRussianLexicon.contains(normalized)
         default: false

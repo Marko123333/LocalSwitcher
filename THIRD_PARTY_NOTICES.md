@@ -24,6 +24,14 @@ release 1.0.8 at commit `69a18ae079084f11569f5190ac2080289055ef5e`.
 It is distributed under MPL-2.0. A complete license copy is stored at
 `third_party/russian-spelling-dictionary/LICENSE`.
 
+## Russian Wiktionary abbreviations
+
+The Russian abbreviation resource is generated from page titles in the
+[Russian Wiktionary `Аббревиатуры/ru` category](https://ru.wiktionary.org/wiki/Категория:Аббревиатуры/ru),
+snapshot retrieved on 2026-09-11. It is distributed under CC BY-SA 4.0.
+Attribution, filtering details and the source snapshot checksum are recorded in
+`third_party/wiktionary/NOTICE.md` and the generated resource header.
+
 ## English Speller Database (formerly SCOWL)
 
 The English fallback lexicon is generated from

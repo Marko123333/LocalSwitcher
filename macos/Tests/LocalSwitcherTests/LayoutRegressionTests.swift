@@ -513,6 +513,110 @@ struct LayoutRegressionTests {
         }
     }
 
+    @Test @MainActor func convertsRussianAbbreviationsFromEnglishLayout() {
+        for target in [
+            "фсб", "ФСБ", "фбр", "ФБР", "пдн", "ПДН", "жкх", "ЖКХ",
+            "мвд", "мчс", "гибдд", "тсж", "ооо", "инн", "снилс",
+            "днк", "мрт", "егэ", "оон", "сша", "вднх", "ВДНХ",
+            "гоэлро", "ГОЭЛРО", "пэвм", "ПЭВМ", "цска", "ЦСКА",
+        ] {
+            let typed = KeyMapping.convert(target)
+            #expect(LayoutDetector.decide(
+                typed: typed,
+                converted: target,
+                currentLang: "en",
+                otherLang: "ru",
+                capsLock: false
+            ) == .switchToConverted, "Failed abbreviation: \(typed) -> \(target)")
+        }
+    }
+
+    @Test @MainActor func keepsCorrectRussianAbbreviationsAndTheirPunctuationImages() {
+        #expect(KeyMapping.convert("фсб") == "ac,")
+        #expect(KeyMapping.convert("жкх") == ";r[")
+
+        for target in ["фсб", "ФСБ", "фбр", "пдн", "жкх", "ЖКХ"] {
+            #expect(LayoutDetector.decide(
+                typed: target,
+                converted: KeyMapping.convert(target),
+                currentLang: "ru",
+                otherLang: "en",
+                capsLock: false
+            ) == .keep, "Rewrote correct Russian abbreviation: \(target)")
+        }
+
+        let punctuated = LayoutDetector.splitTrailingPunctuation("фсб,")
+        #expect(punctuated.coreLength == 3)
+        #expect(punctuated.suffix == ",")
+        #expect(LayoutDetector.decide(
+            typed: "фсб",
+            converted: "ac,",
+            currentLang: "ru",
+            otherLang: "en",
+            capsLock: false
+        ) == .keep)
+    }
+
+    @Test @MainActor func keepsWholeWrongLayoutAbbreviationOnPunctuationKeys() {
+        for (typed, target) in [("ac,", "фсб"), (";r[", "жкх")] {
+            #expect(LayoutDetector.prefersWholeToken(
+                typed: typed,
+                converted: target,
+                currentLang: "en",
+                otherLang: "ru",
+                convertedHasSafeCorrection: false
+            ), "Split punctuation that belongs to abbreviation: \(typed) -> \(target)")
+            #expect(LayoutDetector.decide(
+                typed: typed,
+                converted: target,
+                currentLang: "en",
+                otherLang: "ru",
+                capsLock: false
+            ) == .switchToConverted)
+        }
+    }
+
+    @Test @MainActor func neverSelectsGenericPunctuationBearingTarget() {
+        for typed in ["фыб", "жкъ", "хол"] {
+            let converted = KeyMapping.convert(typed)
+            #expect(!converted.allSatisfy({ $0.isLetter }))
+            #expect(LayoutDetector.decide(
+                typed: typed,
+                converted: converted,
+                currentLang: "ru",
+                otherLang: "en",
+                capsLock: false
+            ) != .switchToConverted, "Selected punctuation target: \(typed) -> \(converted)")
+        }
+    }
+
+    @Test @MainActor func russianAbbreviationKeyImageCollisionsStayEnglish() {
+        var collisions: [String] = []
+        for target in RussianAbbreviations.all {
+            let typed = KeyMapping.convert(target).lowercased()
+            let currentEvidence = typed.allSatisfy(\.isLetter)
+                ? Dict.confidence(typed, lang: "en")
+                : .absent
+            let explicitlyKnownEnglish = HighConfidenceLexicon.contains(typed, language: "en")
+                || ShortWords.common("en")?.contains(typed) == true
+            let decision = LayoutDetector.decide(
+                typed: typed,
+                converted: target,
+                currentLang: "en",
+                otherLang: "ru",
+                capsLock: false
+            )
+            if explicitlyKnownEnglish
+                || (currentEvidence != .absent && !RussianAbbreviations.isReviewed(target)) {
+                collisions.append("\(typed) -> \(target)")
+                #expect(decision == .keep, "Rewrote known English token: \(typed) -> \(target)")
+            } else {
+                #expect(decision == .switchToConverted, "Missed safe abbreviation: \(typed) -> \(target)")
+            }
+        }
+        #expect(!collisions.isEmpty, "Collision guard was not exercised")
+    }
+
     @Test func modernRussianLexiconHasNoUnreviewedEnglishKeyImageCollisions() {
         let intentional: Set<String> = ["bb", "fb"] // user-requested ИИ and АИ
         let collisions = ModernRussianLexicon.allWords.compactMap { target -> String? in

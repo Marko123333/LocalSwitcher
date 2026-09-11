@@ -22,6 +22,24 @@ struct HighConfidenceLexiconTests {
         #expect(!HighConfidenceLexicon.contains("питух", language: "ru"))
     }
 
+    @Test func recognizesDedicatedRussianAbbreviationsCaseInsensitively() {
+        #expect(RussianAbbreviations.corpusCount == 1_604)
+        #expect(RussianAbbreviations.all.count > 1_700)
+        for word in [
+            "фсб", "фбр", "пдн", "жкх", "мвд", "мчс", "гибдд", "тсж",
+            "ооо", "инн", "снилс", "днк", "мрт", "егэ", "оон", "сша",
+            "вднх", "гоэлро", "пэвм", "цска",
+        ] {
+            #expect(RussianAbbreviations.contains(word), "Missing abbreviation: \(word)")
+            #expect(RussianAbbreviations.contains(word.uppercased()))
+            #expect(HighConfidenceLexicon.contains(word, language: "ru"))
+            #expect(HighConfidenceLexicon.contains(word.uppercased(), language: "ru-RU"))
+        }
+
+        #expect(!RussianAbbreviations.contains("ssh"))
+        #expect(!HighConfidenceLexicon.contains("фсб", language: "en"))
+    }
+
     @Test func recognizesRussianParticlesCaseInsensitively() {
         for word in [
             "уж", "же", "бы", "ли", "ль", "ведь", "разве", "неужели",

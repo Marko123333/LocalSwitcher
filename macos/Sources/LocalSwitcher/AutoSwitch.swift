@@ -153,6 +153,36 @@ enum LayoutDetector {
             return .keep
         }
 
+        // Russian abbreviations are exact signals, but some of their all-letter
+        // QWERTY images are also genuine English tokens (`мгу` <-> `vue`, for
+        // example). Preserve that current-language token when it has any local
+        // dictionary evidence; punctuation-bearing and unknown images remain safe
+        // to convert (`ac,` -> `фсб`, `;r[` -> `жкх`). Correctly typed Russian
+        // abbreviations always stay unchanged.
+        let typedRussianAbbreviation = cur == "ru" && RussianAbbreviations.contains(typed)
+        let convertedRussianAbbreviation = oth == "ru" && RussianAbbreviations.contains(converted)
+        if typedRussianAbbreviation != convertedRussianAbbreviation {
+            if typedRussianAbbreviation { return .keep }
+            if typed.allSatisfy({ $0.isLetter }) {
+                let normalizedTyped = typed.lowercased()
+                let explicitlyKnownCurrent = HighConfidenceLexicon.contains(
+                    normalizedTyped,
+                    language: cur
+                ) || ShortWords.common(cur)?.contains(normalizedTyped) == true
+                if explicitlyKnownCurrent { return .keep }
+
+                // The extended Wiktionary corpus is deliberately weaker than a
+                // real current-language word. The manually reviewed frequent set
+                // remains an exact signal even when a broad dictionary happens to
+                // contain an obscure collision (`vdl` -> `мвд`).
+                if !RussianAbbreviations.isReviewed(converted),
+                   Dict.confidence(normalizedTyped, lang: cur) != .absent {
+                    return .keep
+                }
+            }
+            return .switchToConverted
+        }
+
         // Exact curated words are stronger than the generic acronym/camelCase vetoes.
         // This lets a known technical acronym keep its spelling in the correct layout
         // and convert in the wrong one (`ЬСЗ` -> `MCP`, `ЫЫР` -> `SSH`). It also lets
@@ -270,6 +300,16 @@ enum LayoutDetector {
             }
             return othShort.contains(converted.lowercased()) ? .switchToConverted : .undecided
         }
+
+        // Never ask a spelling dictionary to choose a punctuation-bearing target.
+        // NSSpellChecker tokenizes strings such as `ac,` and `;r[` and may accept
+        // their alphabetic fragment. That used to rewrite correctly typed Russian
+        // abbreviations (`фсб` -> `ac,`, `жкх` -> `;r[`) and could duplicate a
+        // literal trailing comma (`фсб,` -> `ac,,`). Exact curated words, ordinary
+        // punctuation-key-to-letter conversions and approved dotted/hyphenated
+        // tokens have already been handled above, so the generic dictionary path
+        // is safe only when the entire destination is alphabetic.
+        guard converted.allSatisfy({ $0.isLetter }) else { return .undecided }
 
         // Словарь — без учёта регистра (Caps Lock не должен мешать определению слова).
         let convertedConfidence = Dict.confidence(converted.lowercased(), lang: oth)

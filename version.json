@@ -1,7 +1,7 @@
 {
-  "version": "0.1.9",
-  "build": "10",
+  "version": "0.1.10",
+  "build": "11",
   "dev": "dev",
   "url": "https://github.com/Marko123333/LocalSwitcher",
-  "notes": "Adds modern Russian loanwords with productive verb and noun forms, a broad AI vocabulary in Russian and English, and dictionary-backed recognition of uppercase words."
+  "notes": "Adds a broad case-insensitive Russian abbreviation lexicon and prevents generic dictionary detection from rewriting Russian key images that contain punctuation."
 }

@@ -254,7 +254,10 @@ struct LayoutRegressionTests {
 
         for target in targets {
             let capitalized = target.prefix(1).uppercased() + target.dropFirst()
-            for variant in [target, capitalized, target.uppercased()] {
+            let variants = ["ли", "ль"].contains(target)
+                ? [target, capitalized]
+                : [target, capitalized, target.uppercased()]
+            for variant in variants {
                 let typed = KeyMapping.convert(variant)
                 #expect(LayoutDetector.decide(
                     typed: typed,
@@ -277,6 +280,25 @@ struct LayoutRegressionTests {
                 otherLang: "ru",
                 convertedHasSafeCorrection: false
             ), "Trailing punctuation key was not retained for \(pair.1)")
+        }
+
+        for (typed, converted) in [("KB", "ЛИ"), ("KM", "ЛЬ")] {
+            #expect(LayoutDetector.decide(
+                typed: typed,
+                converted: converted,
+                currentLang: "en",
+                otherLang: "ru",
+                capsLock: false
+            ) == .keep, "Technical abbreviation was treated as a particle: \(typed)")
+        }
+        for (typed, converted) in [("Kb", "Ли"), ("Km", "Ль")] {
+            #expect(LayoutDetector.decide(
+                typed: typed,
+                converted: converted,
+                currentLang: "en",
+                otherLang: "ru",
+                capsLock: false
+            ) == .switchToConverted, "Capitalized particle was not converted: \(converted)")
         }
     }
 

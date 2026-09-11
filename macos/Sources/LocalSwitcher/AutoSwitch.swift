@@ -143,6 +143,16 @@ enum LayoutDetector {
         let cur = String(currentLang.prefix(2))
         let oth = String(otherLang.prefix(2))
 
+        // `ли` and `ль` share their physical keys with the common technical
+        // abbreviations KB and KM. Sentence-capitalized `Kb`/`Km` are still
+        // eligible for Russian particles, but preserve the conventional all-caps
+        // spellings used for storage sizes and distances.
+        if cur == "en",
+           isAllCaps(typed),
+           ["kb", "km"].contains(typed.lowercased()) {
+            return .keep
+        }
+
         // Exact curated words are stronger than the generic acronym/camelCase vetoes.
         // This lets a known technical acronym keep its spelling in the correct layout
         // and convert in the wrong one (`ЬСЗ` -> `MCP`, `ЫЫР` -> `SSH`). It also lets

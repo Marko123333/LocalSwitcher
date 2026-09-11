@@ -18,6 +18,8 @@ final class SettingsManager: @unchecked Sendable {
         static let launchAtLogin = "com.marko.localswitcher.launchAtLogin"
         static let checkUpdatesEnabled = "com.marko.localswitcher.checkUpdatesEnabled"
         static let betaChannelEnabled = "com.marko.localswitcher.betaChannelEnabled"
+        static let highestStableUpdateVersion = "com.marko.localswitcher.highestStableUpdateVersion"
+        static let highestBetaUpdateVersion = "com.marko.localswitcher.highestBetaUpdateVersion"
         static let interfaceLanguage = "com.marko.localswitcher.interfaceLanguage"
         static let permissionsWereGranted = "com.marko.localswitcher.permissionsWereGranted"
         static let launchAtLoginAsked = "com.marko.localswitcher.launchAtLoginAsked"
@@ -110,6 +112,16 @@ final class SettingsManager: @unchecked Sendable {
     var betaChannelEnabled: Bool {
         get { defaults.bool(forKey: Keys.betaChannelEnabled) }
         set { defaults.set(newValue, forKey: Keys.betaChannelEnabled) }
+    }
+
+    var highestStableUpdateVersion: String {
+        get { defaults.string(forKey: Keys.highestStableUpdateVersion) ?? "" }
+        set { defaults.set(newValue, forKey: Keys.highestStableUpdateVersion) }
+    }
+
+    var highestBetaUpdateVersion: String {
+        get { defaults.string(forKey: Keys.highestBetaUpdateVersion) ?? "" }
+        set { defaults.set(newValue, forKey: Keys.highestBetaUpdateVersion) }
     }
 
     /// Язык интерфейса (пустая строка = авто-определение по системе)
@@ -356,9 +368,6 @@ final class SettingsManager: @unchecked Sendable {
     /// Telegram-чат поддержки (t.me/…). Пусто → пункт меню скрыт. Инвайт-ссылка группы
     /// обсуждения канала @LocalSwitcher (её можно отозвать в настройках группы — тогда обновить).
     static let telegramChatURL = ""
-    /// Team ID (Apple Developer), которым подписаны релизы. Используется для
-    /// пиннинга подписи при авто-обновлении.
-    static let developerTeamID = ""
     static func releaseDMGURL(version: String) -> String {
         "\(githubURL)/releases/download/v\(version)/\(githubRepo)-\(version).dmg"
     }

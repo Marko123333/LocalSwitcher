@@ -1,7 +1,8 @@
 {
-  "version": "0.1.10",
-  "build": "11",
-  "dev": "dev",
+  "version": "0.1.11",
+  "build": "12",
+  "dev": "",
   "url": "https://github.com/Marko123333/LocalSwitcher",
-  "notes": "Adds a broad case-insensitive Russian abbreviation lexicon and prevents generic dictionary detection from rewriting Russian key images that contain punctuation."
+  "notes": "Adds signed one-click updates with strict manifest, DMG, application certificate, bundle identity, version, atomic replacement, and rollback checks.",
+  "sha256": "b37233615823644265e8ea29e9d5ac3b841f1d823da25a5c4a4c774273312509"
 }

@@ -8,6 +8,7 @@ final class SettingsWindowController {
     private var autoSwitchCheckbox: NSButton?
     private var launchAtLoginCheckbox: NSButton?
     private var checkUpdatesCheckbox: NSButton?
+    private weak var updateButton: NSButton?
     private var debugLogCheckbox: NSButton?
     private var caretFlagCheckbox: NSButton?
     private var autoConvertCheckbox: NSButton?      // #4: синк тумблера меню → окно настроек
@@ -409,10 +410,11 @@ final class SettingsWindowController {
         y -= 40
 
         // Проверить обновления
-        let updateBtn = NSButton(title: L10n.menuCheckUpdates, target: self, action: #selector(checkUpdates))
+        let updateBtn = NSButton(title: L10n.menuCheckUpdates, target: self, action: #selector(checkUpdates(_:)))
         updateBtn.frame = NSRect(x: 20, y: y, width: 200, height: 32)
         updateBtn.bezelStyle = .rounded
         view.addSubview(updateBtn)
+        updateButton = updateBtn
 
         item.view = topAligned(view)
         return item
@@ -837,8 +839,11 @@ final class SettingsWindowController {
         }
     }
 
-    @objc private func checkUpdates() {
-        UpdateChecker.checkNow()
+    @objc private func checkUpdates(_ sender: NSButton) {
+        sender.isEnabled = false
+        UpdateChecker.checkNow { [weak self] in
+            self?.updateButton?.isEnabled = true
+        }
     }
 
     @objc private func showLogFile() {

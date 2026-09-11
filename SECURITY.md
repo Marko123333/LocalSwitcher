@@ -12,7 +12,16 @@ The application:
 - permanently excludes supported password managers;
 - does not write typed words to its debug log;
 - ignores its own synthesized keyboard events;
-- keeps automatic updates disabled until a project-owned signed feed exists.
+- accepts updates only from a project-owned cryptographically signed feed;
+- verifies the DMG hash, exact application certificate, bundle identifier, and
+  version before replacing the installed application;
+- creates a verified rollback copy before every in-place update.
+
+The current direct-download releases use a pinned self-signed project
+certificate because the project does not yet have an Apple Developer Program
+membership. This protects update authenticity but does not provide Apple
+notarization or remove the Gatekeeper warning shown on first installation.
+Details and the release checklist are in `docs/UPDATE_SECURITY.md`.
 
 Do not include passwords, tokens, personal text, or raw keystroke logs in bug
 reports. Security issues should be reported privately to the repository owner

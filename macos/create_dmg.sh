@@ -6,12 +6,36 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"   # все относительные пути — от macos/ (аудит: раньше зависели от CWD)
 # --beta: собрать ПРЕД-РЕЛИЗ из version-beta.json, НЕ трогая стабильный фид (version.json)
 # и cask. Иначе — обычный стабильный релиз из version.json (живой фид обновлений).
+# --self-signed: канал без Apple Developer Program. Использует постоянный локальный
+# сертификат, пропускает нотарификацию и всё равно подписывает update-манифест.
 BETA=0
+SELF_SIGNED=0
+SELF_SIGNED_CERT_SHA1="BA582D2E25C17FAD3524B3C3CAED3748816D2E8A"
+SELF_SIGNED_CERT_SHA256="19c8caec20337d7749f5760844b6011364f463c0890268753eae8e6334318f30"
 VERSION_FILE="../version.json"
-if [ "${1:-}" = "--beta" ]; then
-    BETA=1
-    VERSION_FILE="../version-beta.json"
+for arg in "$@"; do
+    case "$arg" in
+        --beta)
+            BETA=1
+            VERSION_FILE="../version-beta.json"
+            ;;
+        --self-signed)
+            SELF_SIGNED=1
+            ;;
+        *)
+            echo "ERROR: unknown argument: $arg" >&2
+            echo "Usage: ./create_dmg.sh [--beta] [--self-signed]" >&2
+            exit 64
+            ;;
+    esac
+done
+if [ "$BETA" = "1" ]; then
     echo "=== BETA build (source: $VERSION_FILE — stable version.json/cask untouched) ==="
+fi
+if [ "$SELF_SIGNED" = "1" ]; then
+    export SKIP_NOTARIZE=1
+    export RS_SIGN_ID="${RS_SIGN_ID:-LocalSwitcher Local Development}"
+    echo "=== SELF-SIGNED build (Gatekeeper notarization unavailable) ==="
 fi
 # build_app.sh читает тот же источник версии через RS_VERSION_JSON.
 export RS_VERSION_JSON="$SCRIPT_DIR/$VERSION_FILE"
@@ -40,8 +64,25 @@ fi
 DMG_TEMP="${APP_NAME}-temp.dmg"
 VOL_NAME="${APP_NAME}"
 BACKGROUND="dmg_background.png"
-APP_PATH="${APP_NAME}.app"
-DMG_SIZE="24m"
+
+# Сборочный app-бандл держим вне Documents/File Provider: иначе FinderInfo может
+# появиться между codesign и следующей проверкой и сделать релиз невоспроизводимым.
+BUILD_OUTPUT_DIR=$(mktemp -d "${TMPDIR:-/tmp}/localswitcher-release-app.XXXXXX")
+CERT_TMP_DIR=""
+MOUNT_DIR=""
+cleanup_release_temp() {
+    if [ -n "$MOUNT_DIR" ] && [ -d "$MOUNT_DIR" ]; then
+        hdiutil detach "$MOUNT_DIR" -force >/dev/null 2>&1 || true
+    fi
+    rm -rf "$BUILD_OUTPUT_DIR"
+    if [ -n "$CERT_TMP_DIR" ]; then
+        rm -rf "$CERT_TMP_DIR"
+    fi
+    rm -f "$DMG_TEMP"
+}
+trap cleanup_release_temp EXIT
+export RS_OUTPUT_DIR="$BUILD_OUTPUT_DIR"
+APP_PATH="$BUILD_OUTPUT_DIR/${APP_NAME}.app"
 
 echo "=== Creating styled DMG ==="
 
@@ -68,6 +109,14 @@ fi
 echo "→ Rebuilding app from source (build_app.sh)..."
 "$SCRIPT_DIR/build_app.sh"
 
+APP_SIZE_KB=$(du -sk "$APP_PATH" | awk '{print $1}')
+if [ "$APP_SIZE_KB" -le 0 ] || [ "$APP_SIZE_KB" -gt 204800 ]; then
+    echo "ERROR: unexpected app size: ${APP_SIZE_KB} KiB (allowed: 1..204800)." >&2
+    exit 1
+fi
+DMG_SIZE="$((APP_SIZE_KB / 1024 + 32))m"
+echo "→ DMG capacity: $DMG_SIZE for ${APP_SIZE_KB} KiB app"
+
 # 0a. Жёсткая проверка: версия в собранном бандле обязана совпадать с version.json,
 #     иначе отказываемся паковать DMG.
 BUNDLE_VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PATH/Contents/Info.plist")
@@ -78,6 +127,24 @@ if [ "$BUNDLE_VERSION" != "$VERSION" ] || [ "$BUNDLE_BUILD" != "$BUILD" ]; then
     exit 1
 fi
 echo "→ Verified bundle $BUNDLE_VERSION (build $BUNDLE_BUILD) matches version.json"
+
+if [ "$SELF_SIGNED" = "1" ]; then
+    echo "→ Verifying pinned LocalSwitcher signing certificate..."
+    codesign --verify --deep --strict \
+        -R="identifier \"com.marko.localswitcher.app\" and certificate leaf = H\"${SELF_SIGNED_CERT_SHA1}\"" \
+        "$APP_PATH"
+    CERT_TMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/localswitcher-release-cert.XXXXXX")
+    CERT_PREFIX="$CERT_TMP_DIR/cert"
+    codesign -d --extract-certificates="$CERT_PREFIX" "$APP_PATH"
+    ACTUAL_CERT_SHA256=$(shasum -a 256 "${CERT_PREFIX}0" | awk '{print $1}')
+    rm -rf "$CERT_TMP_DIR"
+    CERT_TMP_DIR=""
+    if [ "$ACTUAL_CERT_SHA256" != "$SELF_SIGNED_CERT_SHA256" ]; then
+        echo "ERROR: app was signed by an unexpected certificate (SHA-256 mismatch)." >&2
+        exit 1
+    fi
+    echo "→ Exact certificate DER matches the pinned SHA-256"
+fi
 
 # 0b. Нотаризуем и стейплим САМО приложение ДО упаковки — чтобы тикет был внутри .app.
 #     Без этого вытащенный из DMG бандл не имеет своего тикета и при первом запуске
@@ -187,6 +254,7 @@ echo "→ Styling OK (.DS_Store present)"
 # 8. Unmount
 echo "→ Unmounting..."
 hdiutil detach "$MOUNT_DIR" -quiet
+MOUNT_DIR=""
 
 # 9. Convert to compressed read-only DMG
 echo "→ Compressing..."
@@ -239,7 +307,7 @@ with open(path, "w") as f:
     f.write("\n")
 PY
 else
-    echo "→ Writing sha256 into version.json and localswitcher.rb..."
+    echo "→ Writing sha256 into version.json..."
     /usr/bin/python3 - "$DMG_SHA" <<'PY'
 import json, sys
 sha = sys.argv[1]
@@ -250,19 +318,27 @@ with open("../version.json", "w") as f:
     json.dump(data, f, indent=2)
     f.write("\n")
 PY
-    /usr/bin/sed -i '' -E "s/^([[:space:]]*sha256 \").*(\")/\1${DMG_SHA}\2/" "$SCRIPT_DIR/localswitcher.rb"
-    /usr/bin/sed -i '' -E "s/^([[:space:]]*version \").*(\")/\1${VERSION}\2/" "$SCRIPT_DIR/localswitcher.rb"
+    CASK_FILE="$SCRIPT_DIR/localswitcher.rb"
+    if [ -f "$CASK_FILE" ]; then
+        echo "→ Updating optional Homebrew cask..."
+        /usr/bin/sed -i '' -E "s/^([[:space:]]*sha256 \").*(\")/\1${DMG_SHA}\2/" "$CASK_FILE"
+        /usr/bin/sed -i '' -E "s/^([[:space:]]*version \").*(\")/\1${VERSION}\2/" "$CASK_FILE"
 
-    # Проверяем, что подстановка реально произошла: sed при отсутствии совпадения выходит
-    # с кодом 0 (set -e не ловит), поэтому дрейф формата каска прошёл бы молча со старой версией.
-    if ! grep -q "sha256 \"${DMG_SHA}\"" "$SCRIPT_DIR/localswitcher.rb" || ! grep -q "version \"${VERSION}\"" "$SCRIPT_DIR/localswitcher.rb"; then
-        echo "ERROR: cask update via sed did not take (format drift in localswitcher.rb?). Aborting." >&2
-        exit 1
+        # sed при отсутствии совпадения выходит с кодом 0, поэтому проверяем результат.
+        if ! grep -q "sha256 \"${DMG_SHA}\"" "$CASK_FILE" || ! grep -q "version \"${VERSION}\"" "$CASK_FILE"; then
+            echo "ERROR: cask update via sed did not take (format drift in localswitcher.rb?). Aborting." >&2
+            exit 1
+        fi
     fi
 fi
+
+# Манифест публикуется только с detached RSA/SHA-256 подписью. Приватный ключ
+# берётся из Keychain и никогда не хранится в репозитории.
+echo "→ Signing update manifest..."
+"$SCRIPT_DIR/../scripts/sign_update_manifest.swift" "$SCRIPT_DIR/$VERSION_FILE"
 
 echo ""
 echo "=== Done! ==="
 echo "DMG: $(pwd)/$DMG_NAME ($(du -h "$DMG_NAME" | cut -f1))"
 echo "SHA256: $DMG_SHA"
-echo "→ version.json and localswitcher.rb updated with this hash."
+echo "→ Update manifest signed and bound to the DMG hash."

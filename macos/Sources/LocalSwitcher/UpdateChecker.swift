@@ -4,30 +4,38 @@ import Foundation
 /// Проверяет наличие обновлений через GitHub
 @MainActor
 enum UpdateChecker {
-    // До публикации собственного подписанного канала нельзя предлагать
-    // обновления upstream: они перезаписали бы эту производную сборку.
-    private static let updatesConfigured = false
     // URL к JSON с информацией о версии (стабильный фид).
     private static let versionURL = "https://raw.githubusercontent.com/Marko123333/LocalSwitcher/main/version.json"
     // Фид пред-релизов (бет). Читается ТОЛЬКО если включён бета-канал в настройках.
     // Может отсутствовать (404) — тогда бета-клиент просто остаётся на стабильном фиде.
     private static let betaVersionURL = "https://raw.githubusercontent.com/Marko123333/LocalSwitcher/main/version-beta.json"
 
-    /// Структура JSON версии
-    private struct VersionInfo: Decodable {
-        let version: String
-        let url: String
-        let notes: String?
-        let sha256: String?
+    private enum FeedResult {
+        case success(UpdateManifest)
+        case unavailable
+        case untrusted
     }
+
+    private enum FeedChannel {
+        case stable
+        case beta
+    }
+
+    private static var checkInProgress = false
+    private static let maximumManifestBytes = 64 * 1024
+    private static let maximumSignatureBytes = 8 * 1024
 
     /// Проверить при запуске (с задержкой 5 сек, не чаще раза в сутки).
     /// Отключается через настройку `checkUpdatesEnabled`. Ручная проверка (`checkNow`) работает всегда.
     static func checkOnLaunch() {
-        guard updatesConfigured else { return }
         guard shouldAutoCheck() else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-            Task { await check(silent: true) }
+            Task {
+                guard shouldAutoCheck(), !checkInProgress else { return }
+                checkInProgress = true
+                await check(silent: true)
+                checkInProgress = false
+            }
         }
     }
 
@@ -35,9 +43,12 @@ enum UpdateChecker {
     /// Тот же троттл (не чаще раза в сутки) и та же настройка `checkUpdatesEnabled`, что и на старте,
     /// поэтому долго-живущий инстанс тоже ловит новые версии, а не только при перезапуске.
     static func checkPeriodic() {
-        guard updatesConfigured else { return }
-        guard shouldAutoCheck() else { return }
-        Task { await check(silent: true) }
+        guard shouldAutoCheck(), !checkInProgress else { return }
+        checkInProgress = true
+        Task {
+            await check(silent: true)
+            checkInProgress = false
+        }
     }
 
     /// Можно ли сейчас авто-проверять: включено в настройках И прошло ≥24ч с последней проверки.
@@ -52,19 +63,30 @@ enum UpdateChecker {
     }
 
     /// Проверить вручную (всегда показывает результат)
-    static func checkNow() {
-        guard updatesConfigured else {
-            Task { await showErrorAlert() }
+    static func checkNow(completion: (() -> Void)? = nil) {
+        guard !checkInProgress else {
+            completion?()
             return
         }
-        Task { await check(silent: false) }
+        checkInProgress = true
+        Task {
+            await check(silent: false)
+            checkInProgress = false
+            completion?()
+        }
     }
 
     private static func check(silent: Bool) async {
-        guard let info = await fetchApplicableInfo() else {
-            // nil = стабильный фид недостижим (сеть). Бета-фид опционален и на это не влияет.
+        let result = await fetchApplicableInfo()
+        guard case let .success(info) = result else {
             rslog("UpdateChecker: stable feed unreachable")
-            if !silent { await showErrorAlert() }
+            if !silent {
+                switch result {
+                case .untrusted: await showIntegrityErrorAlert()
+                case .unavailable: await showErrorAlert()
+                case .success: break
+                }
+            }
             return
         }
 
@@ -72,9 +94,14 @@ enum UpdateChecker {
 
         let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
 
-        if compareVersions(info.version, isNewerThan: currentVersion) {
+        if UpdateVersion.isNewer(info.version, than: currentVersion) {
             if SettingsManager.shared.skippedVersion == info.version && silent {
                 return // Пользователь пропустил эту версию
+            }
+            guard info.sha256 != nil else {
+                rslog("UpdateChecker: newer manifest has no release sha256")
+                if !silent { await showIntegrityErrorAlert() }
+                return
             }
             await showUpdateAlert(info: info)
         } else if !silent {
@@ -86,34 +113,104 @@ enum UpdateChecker {
     /// читает фид пред-релизов и возвращает более СВЕЖУЮ из двух версий (по semver). Так
     /// бета-тестер получает беты, но автоматически «сходит» на финальный стабильный релиз,
     /// когда тот обгонит бету. Отсутствие/ошибка бета-фида не мешает стабильному.
-    private static func fetchApplicableInfo() async -> VersionInfo? {
-        guard let stable = await fetchInfo(from: versionURL) else { return nil }
-        guard SettingsManager.shared.betaChannelEnabled else { return stable }
-        guard let beta = await fetchInfo(from: betaVersionURL) else { return stable }
-        return compareVersions(beta.version, isNewerThan: stable.version) ? beta : stable
+    private static func fetchApplicableInfo() async -> FeedResult {
+        let stableResult = await fetchInfo(from: versionURL, channel: .stable)
+        guard case let .success(stable) = stableResult else { return stableResult }
+        guard SettingsManager.shared.betaChannelEnabled else { return .success(stable) }
+        guard case let .success(beta) = await fetchInfo(from: betaVersionURL, channel: .beta) else {
+            return .success(stable)
+        }
+        return .success(UpdateVersion.isNewer(beta.version, than: stable.version) ? beta : stable)
     }
 
     /// Текст изменений текущей беты (поле notes бета-фида) — для отдельной «витрины беты».
     /// nil, если бета-фид недоступен или без notes.
     static func fetchBetaNotes() async -> String? {
-        await fetchInfo(from: betaVersionURL)?.notes
+        guard case let .success(info) = await fetchInfo(from: betaVersionURL, channel: .beta) else { return nil }
+        return info.notes
     }
 
-    /// Скачивает и декодирует VersionInfo из фида. nil при сетевой ошибке или не-200
-    /// (напр. бета-фида ещё нет — тогда вызывающий остаётся на стабильном).
-    private static func fetchInfo(from urlString: String) async -> VersionInfo? {
-        guard let url = URL(string: urlString) else { return nil }
+    /// Загружает JSON и его detached-подпись. Даже полный контроль над GitHub-репозиторием
+    /// не позволяет выпустить обновление без приватного ключа LocalSwitcher.
+    private static func fetchInfo(from urlString: String, channel: FeedChannel) async -> FeedResult {
+        guard let url = URL(string: urlString),
+              let signatureURL = URL(string: urlString + ".sig")
+        else { return .untrusted }
+
+        async let manifestResponse = fetchData(from: url, maximumBytes: maximumManifestBytes)
+        async let signatureResponse = fetchData(from: signatureURL, maximumBytes: maximumSignatureBytes)
+        guard let manifestData = await manifestResponse else { return .unavailable }
+        // Доступный JSON без подписи — это не «проблема сети», а небезопасный канал.
+        guard let signatureData = await signatureResponse else { return .untrusted }
+
+        guard let manifest = UpdateManifestVerifier.verify(
+            manifestData: manifestData,
+            signatureData: signatureData
+        ) else {
+            rslog("UpdateChecker: rejected unsigned or invalid manifest \(urlString)")
+            return .untrusted
+        }
+        guard acceptMonotonicFeedVersion(manifest.version, channel: channel) else {
+            rslog("UpdateChecker: rejected signed feed rollback to \(manifest.version)")
+            return .untrusted
+        }
+        return .success(manifest)
+    }
+
+    /// A detached signature proves authenticity, but an attacker controlling the
+    /// hosting path could replay an older signed file. Remember the highest version
+    /// seen for each channel so a client cannot be rolled back after observing a
+    /// newer feed. First-contact freshness still relies on HTTPS/GitHub availability.
+    private static func acceptMonotonicFeedVersion(
+        _ version: String,
+        channel: FeedChannel
+    ) -> Bool {
+        let settings = SettingsManager.shared
+        let previous: String
+        switch channel {
+        case .stable: previous = settings.highestStableUpdateVersion
+        case .beta: previous = settings.highestBetaUpdateVersion
+        }
+
+        if !previous.isEmpty, UpdateVersion.isNewer(previous, than: version) {
+            return false
+        }
+        if previous.isEmpty || UpdateVersion.isNewer(version, than: previous) {
+            switch channel {
+            case .stable: settings.highestStableUpdateVersion = version
+            case .beta: settings.highestBetaUpdateVersion = version
+            }
+        }
+        return true
+    }
+
+    private static func fetchData(from url: URL, maximumBytes: Int) async -> Data? {
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 15
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        guard let workDirectory = makePrivateTemporaryDirectory() else { return nil }
+        defer { try? FileManager.default.removeItem(at: workDirectory) }
+        let destination = workDirectory.appendingPathComponent("response", isDirectory: false)
         do {
-            let (data, response) = try await URLSession.shared.data(from: url)
-            if let http = response as? HTTPURLResponse, http.statusCode != 200 { return nil }
-            return try JSONDecoder().decode(VersionInfo.self, from: data)
+            let downloader = BoundedDownloader(maximumBytes: Int64(maximumBytes))
+            let response = try await downloader.download(
+                for: request,
+                to: destination
+            )
+            guard let http = response as? HTTPURLResponse,
+                  http.statusCode == 200
+            else { return nil }
+            let size = try destination.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+            guard size > 0, size <= maximumBytes else { return nil }
+            let data = try Data(contentsOf: destination, options: .mappedIfSafe)
+            return data
         } catch {
-            rslog("UpdateChecker fetch \(urlString): \(error)")
+            rslog("UpdateChecker fetch \(url.absoluteString): \(error)")
             return nil
         }
     }
 
-    private static func showUpdateAlert(info: VersionInfo) async {
+    private static func showUpdateAlert(info: UpdateManifest) async {
         let isBeta = info.version.last?.isLetter ?? false   // «3.2.0a» — пред-релиз
         let alert = NSAlert()
         alert.alertStyle = .informational
@@ -129,7 +226,7 @@ enum UpdateChecker {
         case .alertFirstButtonReturn:
             await installAndRestart(info: info)
         case .alertSecondButtonReturn:
-            if let url = URL(string: info.url) {
+            if let url = URL(string: "\(SettingsManager.githubURL)/releases/tag/v\(info.version)") {
                 NSWorkspace.shared.open(url)
             }
         case .alertThirdButtonReturn:
@@ -141,13 +238,13 @@ enum UpdateChecker {
 
     // MARK: - Install & Restart
 
-    private static func installAndRestart(info: VersionInfo) async {
+    private static func installAndRestart(info: UpdateManifest) async {
         let version = info.version
 
         // 0. Версия приходит из сети — не доверяем вслепую (попадёт в URL и в сравнение).
         //    Разрешаем необязательную одну строчную букву-суффикс для бет: «3.2.0a».
         //    Класс [0-9.a-z] исключает slash/пробел/метасимволы — безопасно для URL/тега.
-        guard version.range(of: "^[0-9]+(\\.[0-9]+){1,3}[a-z]?$", options: .regularExpression) != nil else {
+        guard UpdateVersion.isValid(version) else {
             rslog("Update: rejected malformed version '\(version)'")
             // Семантически это недоверие данным фида, а не «повреждённый файл»:
             // на этом этапе ничего ещё не скачивалось.
@@ -155,15 +252,11 @@ enum UpdateChecker {
             return
         }
 
-        // 0a. sha256 обязателен для установки на месте: молча подменять приложение
-        //     keylogger-класса без проверки нельзя. Нет хэша — откат на загрузку
-        //     в браузере, где работает Gatekeeper/нотаризация.
-        guard let expectedSHA = info.sha256, !expectedSHA.isEmpty else {
-            rslog("Update: no sha256 in version.json — falling back to browser download")
-            // URL строим локально, а не из фида: фиду установщик не доверяет нигде.
-            if let url = URL(string: "\(SettingsManager.githubURL)/releases/latest") {
-                NSWorkspace.shared.open(url)
-            }
+        // 0a. Хэш обязателен даже при подписанном манифесте: он привязывает подпись
+        //     к точным байтам DMG и обнаруживает повреждение загрузки до монтирования.
+        guard let expectedSHA = info.sha256?.lowercased() else {
+            rslog("Update: signed manifest has no sha256")
+            await showInstallError(L10n.updateIntegrityFailed)
             return
         }
 
@@ -172,36 +265,52 @@ enum UpdateChecker {
             return
         }
 
-        // Приватная temp-директория пользователя вместо общего /tmp (аудит: предсказуемый
-        // путь в shared /tmp — окно для symlink-подмены между проверкой и установкой).
-        let tmpPath = NSTemporaryDirectory() + "LocalSwitcher-update.dmg"
-        let tmpURL = URL(fileURLWithPath: tmpPath)
+        let progress = UpdateProgressWindow(version: version)
+        progress.show()
+        defer { progress.close() }
 
-        // 1. Скачать
+        let fm = FileManager.default
+        guard let workDirectory = makePrivateTemporaryDirectory() else {
+            await showInstallError(L10n.updateInstallFailed)
+            return
+        }
+        defer { try? fm.removeItem(at: workDirectory) }
+        let tmpURL = workDirectory.appendingPathComponent("update.dmg", isDirectory: false)
+        let tmpPath = tmpURL.path
+
+        // 1. Скачать потоково во временный файл URLSession, а не держать весь DMG в RAM.
         rslog("Update: downloading \(dmgURL)")
         do {
-            let (data, response) = try await URLSession.shared.data(from: dmgURL)
-            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            var request = URLRequest(url: dmgURL)
+            request.timeoutInterval = 120
+            request.cachePolicy = .reloadIgnoringLocalCacheData
+            let downloader = BoundedDownloader(maximumBytes: 256 * 1024 * 1024)
+            let response = try await downloader.download(
+                for: request,
+                to: tmpURL
+            )
+            guard let http = response as? HTTPURLResponse,
+                  http.statusCode == 200,
+                  http.expectedContentLength <= 0 || http.expectedContentLength <= 256 * 1024 * 1024
+            else {
                 await showInstallError(L10n.updateDownloadFailed)
                 return
             }
-            try data.write(to: tmpURL)
+            let size = try tmpURL.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+            guard size > 0, size <= 256 * 1024 * 1024 else {
+                await showInstallError(L10n.updateDownloadFailed)
+                return
+            }
         } catch {
             rslog("Update: download failed — \(error)")
             await showInstallError(L10n.updateDownloadFailed)
             return
         }
 
-        // Скачанный образ убираем на ЛЮБОМ выходе с ошибкой ниже (раньше ветки отказа
-        // mount выходили до регистрации уборки и DMG протекал на диск). Путь успеха
-        // до defer не доживает (terminate) — там уборка явная, перед relaunch.
-        defer { try? FileManager.default.removeItem(at: tmpURL) }
-
         // 2. Проверить sha256 (обязательно)
         let actualSHA = sha256OfFile(at: tmpPath)
-        guard actualSHA == expectedSHA else {
+        guard actualSHA?.lowercased() == expectedSHA else {
             rslog("Update: sha256 mismatch expected=\(expectedSHA) actual=\(actualSHA ?? "nil")")
-            try? FileManager.default.removeItem(at: tmpURL)
             // Битая загрузка — НЕ «проверка не пройдена» вообще: у части пользователей сеть
             // режет/искажает скачивание с CDN GitHub (assets-хост блокируется отдельно от
             // raw.githubusercontent). Говорим прямо и предлагаем браузер.
@@ -210,16 +319,12 @@ enum UpdateChecker {
         }
         rslog("Update: sha256 verified")
 
-        // Наследие ≤2.6.1: путь успеха не размонтировал том (terminate съедал defer),
-        // и он висел по фиксированному пути до перезагрузки. Прибираем тихо.
-        detachUpdateVolume(at: "/tmp/LocalSwitcher-update-mount")
-
-        // 3. Смонтировать DMG (уникальный mountpoint: не пересекается с прошлой попыткой
-        //    и не предсказуем заранее — в пару к приватному пути загрузки выше)
-        let mountPoint = NSTemporaryDirectory() + "LocalSwitcher-update-mount-\(UUID().uuidString.prefix(8))"
+        // 3. Смонтировать DMG внутри приватного каталога с непредсказуемым именем.
+        let mountURL = workDirectory.appendingPathComponent("mount", isDirectory: true)
+        let mountPoint = mountURL.path
         let mount = Process()
         mount.launchPath = "/usr/bin/hdiutil"
-        mount.arguments = ["attach", tmpPath, "-nobrowse", "-readonly", "-mountpoint", mountPoint]
+        mount.arguments = ["attach", tmpPath, "-nobrowse", "-readonly", "-noautoopen", "-mountpoint", mountPoint]
         mount.standardOutput = FileHandle.nullDevice
         mount.standardError = FileHandle.nullDevice
         do {
@@ -238,23 +343,27 @@ enum UpdateChecker {
 
         defer { detachUpdateVolume(at: mountPoint) }   // ветки ошибок; успех чистится явно
 
-        // 4. Найти .app в смонтированном томе
-        let fm = FileManager.default
-        guard let contents = try? fm.contentsOfDirectory(atPath: mountPoint),
-              let appName = contents.first(where: { $0.hasSuffix(".app") }) else {
-            rslog("Update: no .app found in mounted DMG")
+        // 4. Принимаем только точное имя бандла и не разрешаем symlink за пределы DMG.
+        let appName = "LocalSwitcher.app"
+        let sourceApp = mountURL.appendingPathComponent(appName, isDirectory: true)
+        let sourceValues = try? sourceApp.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+        let resolvedMount = mountURL.resolvingSymlinksInPath().standardizedFileURL.path + "/"
+        let resolvedSource = sourceApp.resolvingSymlinksInPath().standardizedFileURL.path + "/"
+        guard sourceValues?.isDirectory == true,
+              sourceValues?.isSymbolicLink != true,
+              resolvedSource.hasPrefix(resolvedMount) else {
+            rslog("Update: exact non-symlink LocalSwitcher.app not found in mounted DMG")
             await showInstallError(L10n.updateInstallFailed)
             return
         }
 
-        let sourceApp = URL(fileURLWithPath: mountPoint).appendingPathComponent(appName)
         let currentApp = URL(fileURLWithPath: Bundle.main.bundlePath)
 
-        // 5. ПРОВЕРКА ПОДПИСИ: единственная реальная защита от подмены кода.
-        //    sha256 защищает лишь от битой загрузки — если подменить и DMG, и хэш,
-        //    спасает только пиннинг Developer ID нашей команды.
-        guard verifyNotarizedSignature(at: sourceApp.path) else {
-            rslog("Update: signature/notarization check FAILED — aborting")
+        // 5. Проверяем подпись точным постоянным сертификатом LocalSwitcher. Это не
+        //     Developer ID и не нотарификация, но подделать подпись без приватного ключа
+        //     нельзя. Подпись манифеста и приложения закреплены одним ключом.
+        guard verifyPinnedSignature(at: sourceApp.path) else {
+            rslog("Update: pinned application signature check FAILED — aborting")
             await showInstallError(L10n.updateIntegrityFailed)
             return
         }
@@ -281,15 +390,27 @@ enum UpdateChecker {
             return
         }
 
-        // 6. Скопировать .app с read-only тома DMG на тот же том, что и текущее
-        //    приложение. replaceItemAt НЕ умеет переносить элемент напрямую с
-        //    read-only тома DMG — именно это давало «Ошибку установки».
-        let stagingDir = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent("LocalSwitcher-update-staging", isDirectory: true)
-        try? fm.removeItem(at: stagingDir)
+        // 6. Сначала сохраняем рабочую версию для ручного/аварийного отката.
+        guard let backupApp = createUpdateBackup(of: currentApp, currentVersion: currentVersion()) else {
+            rslog("Update: failed to create rollback copy")
+            await showInstallError(L10n.updateInstallFailed)
+            return
+        }
+        rslog("Update: rollback copy saved at \(backupApp.deletingLastPathComponent().path)")
+
+        // 6a. Скопировать приложение в автоматически созданный item-replacement каталог
+        //     на том же диске. Это устраняет фиксированный symlink-уязвимый staging path.
+        guard let stagingDir = try? fm.url(
+            for: .itemReplacementDirectory,
+            in: .userDomainMask,
+            appropriateFor: currentApp,
+            create: true
+        ) else {
+            await showInstallError(L10n.updateInstallFailed)
+            return
+        }
         let stagedApp = stagingDir.appendingPathComponent(appName)
         do {
-            try fm.createDirectory(at: stagingDir, withIntermediateDirectories: true)
             try fm.copyItem(at: sourceApp, to: stagedApp)
         } catch {
             rslog("Update: staging copy failed — \(error)")
@@ -298,13 +419,31 @@ enum UpdateChecker {
         }
         defer { try? fm.removeItem(at: stagingDir) }
 
+        // Повторная проверка после копирования закрывает TOCTOU между DMG и staging.
+        guard verifyPinnedSignature(at: stagedApp.path) else {
+            rslog("Update: staged application signature changed")
+            await showInstallError(L10n.updateIntegrityFailed)
+            return
+        }
+
         // 7. Атомарно заменить .app из staging-копии (на одном томе — работает)
         do {
             _ = try fm.replaceItemAt(currentApp, withItemAt: stagedApp)
             rslog("Update: app replaced successfully")
         } catch {
             rslog("Update: replace failed — \(error)")
+            restoreBackupIfNeeded(backupApp, to: currentApp)
             await showInstallError(error.localizedDescription)
+            return
+        }
+
+        // Проверяем уже установленный путь. При любом расхождении возвращаем бэкап,
+        // пока старый процесс ещё жив и может показать пользователю результат.
+        guard verifyPinnedSignature(at: currentApp.path),
+              bundleVersion(at: currentApp) == version else {
+            rslog("Update: installed application verification failed; rolling back")
+            restoreBackup(backupApp, to: currentApp)
+            await showInstallError(L10n.updateIntegrityFailed)
             return
         }
 
@@ -315,11 +454,133 @@ enum UpdateChecker {
         //    (ревью-находка, воспроизведена).
         try? fm.removeItem(at: stagingDir)
         detachUpdateVolume(at: mountPoint)
-        try? fm.removeItem(at: tmpURL)
+        try? fm.removeItem(at: workDirectory)
 
         // 9. Перезапуск
         rslog("Update: restarting...")
-        AppRelauncher.relaunch(bundlePath: currentApp.path)
+        guard AppRelauncher.relaunch(bundlePath: currentApp.path) else {
+            rslog("Update: relaunch helper failed; rolling back")
+            restoreBackup(backupApp, to: currentApp)
+            await showInstallError(L10n.updateInstallFailed)
+            return
+        }
+    }
+
+    private static func makePrivateTemporaryDirectory() -> URL? {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("LocalSwitcher-update-\(UUID().uuidString)", isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: false,
+                attributes: [.posixPermissions: 0o700]
+            )
+            let values = try directory.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+            guard values.isDirectory == true, values.isSymbolicLink != true else {
+                try? FileManager.default.removeItem(at: directory)
+                return nil
+            }
+            return directory
+        } catch {
+            rslog("Update: private temp directory failed — \(error)")
+            return nil
+        }
+    }
+
+    private static func createUpdateBackup(of currentApp: URL, currentVersion: String) -> URL? {
+        let currentValues = try? currentApp.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+        guard UpdateVersion.isValid(currentVersion),
+              currentValues?.isDirectory == true,
+              currentValues?.isSymbolicLink != true,
+              verifyPinnedSignature(at: currentApp.path) else {
+            rslog("Update: current application does not match pinned signature")
+            return nil
+        }
+        let fm = FileManager.default
+        guard let support = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            return nil
+        }
+        let backupDirectory = support
+            .appendingPathComponent("LocalSwitcher", isDirectory: true)
+            .appendingPathComponent("UpdateBackups", isDirectory: true)
+            .appendingPathComponent("\(currentVersion)-\(UUID().uuidString)", isDirectory: true)
+        let backupApp = backupDirectory.appendingPathComponent("LocalSwitcher.app", isDirectory: true)
+        do {
+            try fm.createDirectory(
+                at: backupDirectory,
+                withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700]
+            )
+            try fm.copyItem(at: currentApp, to: backupApp)
+            guard verifyPinnedSignature(at: backupApp.path) else {
+                try? fm.removeItem(at: backupDirectory)
+                return nil
+            }
+            return backupApp
+        } catch {
+            rslog("Update: backup failed — \(error)")
+            try? fm.removeItem(at: backupDirectory)
+            return nil
+        }
+    }
+
+    private static func restoreBackupIfNeeded(_ backupApp: URL, to currentApp: URL) {
+        if !FileManager.default.fileExists(atPath: currentApp.path)
+            || !verifyPinnedSignature(at: currentApp.path) {
+            restoreBackup(backupApp, to: currentApp)
+        }
+    }
+
+    private static func restoreBackup(_ backupApp: URL, to currentApp: URL) {
+        let fm = FileManager.default
+        guard verifyPinnedSignature(at: backupApp.path) else {
+            rslog("Update: refusing rollback from an invalid backup")
+            return
+        }
+        do {
+            if fm.fileExists(atPath: currentApp.path) {
+                let replacementDirectory = try fm.url(
+                    for: .itemReplacementDirectory,
+                    in: .userDomainMask,
+                    appropriateFor: currentApp,
+                    create: true
+                )
+                defer { try? fm.removeItem(at: replacementDirectory) }
+                let replacementApp = replacementDirectory
+                    .appendingPathComponent("LocalSwitcher.app", isDirectory: true)
+                try fm.copyItem(at: backupApp, to: replacementApp)
+                guard verifyPinnedSignature(at: replacementApp.path) else {
+                    rslog("Update: rollback staging signature verification failed")
+                    return
+                }
+                _ = try fm.replaceItemAt(currentApp, withItemAt: replacementApp)
+            } else {
+                try fm.copyItem(at: backupApp, to: currentApp)
+            }
+            guard verifyPinnedSignature(at: currentApp.path) else {
+                rslog("Update: restored backup signature verification failed")
+                return
+            }
+            rslog("Update: rollback restored")
+        } catch {
+            rslog("Update: rollback failed — \(error)")
+        }
+    }
+
+    private static func bundleVersion(at app: URL) -> String? {
+        let plistURL = app.appendingPathComponent("Contents/Info.plist")
+        guard let data = try? Data(contentsOf: plistURL),
+              let dictionary = try? PropertyListSerialization.propertyList(
+                from: data,
+                options: [],
+                format: nil
+              ) as? [String: Any]
+        else { return nil }
+        return dictionary["CFBundleShortVersionString"] as? String
+    }
+
+    private static func currentVersion() -> String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
     }
 
     /// Тихо размонтирует том обновления. Вынесено из defer, потому что путь успеха
@@ -330,27 +591,19 @@ enum UpdateChecker {
         detach.arguments = ["detach", mountPoint, "-quiet"]
         detach.standardOutput = FileHandle.nullDevice
         detach.standardError = FileHandle.nullDevice
-        try? detach.run()
-        detach.waitUntilExit()
+        do {
+            try detach.run()
+            detach.waitUntilExit()
+        } catch {
+            rslog("Update: hdiutil detach failed to start — \(error)")
+        }
     }
 
-    /// Проверяет, что бандл подписан Developer ID нашей команды и проходит строгую
-    /// проверку целостности (codesign --verify с пиннингом Team ID).
-    private static func verifyNotarizedSignature(at path: String) -> Bool {
-        let requirement = "anchor apple generic and certificate leaf[subject.OU] = \"\(SettingsManager.developerTeamID)\""
-        let process = Process()
-        process.launchPath = "/usr/bin/codesign"
-        process.arguments = ["--verify", "--deep", "--strict", "-R=\(requirement)", path]
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        do {
-            try process.run()
-            process.waitUntilExit()
-            return process.terminationStatus == 0
-        } catch {
-            rslog("Update: codesign verify error — \(error)")
-            return false
-        }
+    /// Проверяет целостность бандла и точный сертификат LocalSwitcher. Self-signed
+    /// сертификат не даёт доверия Gatekeeper при первой установке, но обеспечивает
+    /// стабильную идентичность приложения и криптографический пиннинг обновлений.
+    private static func verifyPinnedSignature(at path: String) -> Bool {
+        ApplicationSignatureVerifier.verify(appURL: URL(fileURLWithPath: path))
     }
 
     private static func sha256OfFile(at path: String) -> String? {
@@ -410,38 +663,144 @@ enum UpdateChecker {
         showAlert(style: .warning, title: L10n.updateCheckFailed, message: L10n.updateCheckFailedDetail)
     }
 
-    /// Строго ли v1 новее v2. Поддерживает пред-релизы: одна строчная буква-суффикс
-    /// («3.2.0a») — это БЕТА, и она СТАРШЕ по числовому ядру, но МЛАДШЕ финала того же
-    /// ядра. Порядок: 3.1.0 < 3.2.0a < 3.2.0b < 3.2.0 (финал). Так тестер на «3.2.0c»
-    /// получит обновление до финального «3.2.0», когда тот выйдет.
-    private static func compareVersions(_ v1: String, isNewerThan v2: String) -> Bool {
-        semverCompare(v1, v2) == .orderedDescending
+    private static func showIntegrityErrorAlert() async {
+        showAlert(style: .warning, title: L10n.updateCheckFailed, message: L10n.updateIntegrityFailed)
+    }
+}
+
+@MainActor
+private final class UpdateProgressWindow {
+    private let alert = NSAlert()
+    private let indicator = NSProgressIndicator()
+
+    init(version: String) {
+        alert.alertStyle = .informational
+        alert.messageText = L10n.updateAvailable
+        alert.informativeText = "\(L10n.updateInstallRestart): \(version)"
+
+        indicator.style = .spinning
+        indicator.controlSize = .regular
+        indicator.isIndeterminate = true
+        indicator.frame = NSRect(x: 0, y: 0, width: 32, height: 32)
+        alert.accessoryView = indicator
     }
 
-    /// Разбирает версию на числовое ядро и необязательную букву-пред-релиз.
-    private static func parseVersion(_ v: String) -> (core: [Int], pre: String) {
-        var s = Substring(v)
-        var pre = ""
-        if let last = s.last, last.isLetter {          // «3.2.0a» → pre="a", ядро "3.2.0"
-            pre = String(last).lowercased()
-            s = s.dropLast()
-        }
-        let core = s.split(separator: ".").map { Int($0) ?? 0 }
-        return (core, pre)
+    func show() {
+        indicator.startAnimation(nil)
+        alert.window.center()
+        alert.window.makeKeyAndOrderFront(nil)
     }
 
-    private static func semverCompare(_ a: String, _ b: String) -> ComparisonResult {
-        let (ca, pa) = parseVersion(a)
-        let (cb, pb) = parseVersion(b)
-        for i in 0..<max(ca.count, cb.count) {
-            let x = i < ca.count ? ca[i] : 0
-            let y = i < cb.count ? cb[i] : 0
-            if x != y { return x < y ? .orderedAscending : .orderedDescending }
+    func close() {
+        indicator.stopAnimation(nil)
+        alert.window.orderOut(nil)
+    }
+}
+
+enum BoundedDownloadError: Error {
+    case exceedsLimit
+    case missingDownloadedFile
+}
+
+final class BoundedDownloader: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
+    private let maximumBytes: Int64
+    private var continuation: CheckedContinuation<URLResponse, Error>?
+    private var session: URLSession?
+    private var destinationURL: URL?
+    private var terminalError: Error?
+
+    init(maximumBytes: Int64) {
+        self.maximumBytes = maximumBytes
+    }
+
+    func download(for request: URLRequest, to destinationURL: URL) async throws -> URLResponse {
+        try await withCheckedThrowingContinuation { continuation in
+            self.continuation = continuation
+            self.destinationURL = destinationURL
+
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.httpShouldSetCookies = false
+            configuration.urlCredentialStorage = nil
+            configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+            configuration.timeoutIntervalForRequest = request.timeoutInterval
+            configuration.timeoutIntervalForResource = request.timeoutInterval
+
+            let queue = OperationQueue()
+            queue.maxConcurrentOperationCount = 1
+            let session = URLSession(configuration: configuration, delegate: self, delegateQueue: queue)
+            self.session = session
+            session.downloadTask(with: request).resume()
         }
-        // Ядра равны: финал (без буквы) старше любой беты; между бетами — по букве (a<b<c).
-        if pa == pb { return .orderedSame }
-        if pa.isEmpty { return .orderedDescending }    // a=финал, b=бета → a новее
-        if pb.isEmpty { return .orderedAscending }     // a=бета, b=финал → b новее
-        return pa < pb ? .orderedAscending : .orderedDescending
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        downloadTask: URLSessionDownloadTask,
+        didFinishDownloadingTo location: URL
+    ) {
+        guard terminalError == nil else { return }
+        do {
+            let size = try location.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+            guard size > 0, Int64(size) <= maximumBytes else {
+                terminalError = BoundedDownloadError.exceedsLimit
+                return
+            }
+            guard let destinationURL else {
+                terminalError = BoundedDownloadError.missingDownloadedFile
+                return
+            }
+            try FileManager.default.moveItem(at: location, to: destinationURL)
+        } catch {
+            terminalError = error
+        }
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        downloadTask: URLSessionDownloadTask,
+        didWriteData bytesWritten: Int64,
+        totalBytesWritten: Int64,
+        totalBytesExpectedToWrite: Int64
+    ) {
+        if exceedsLimit(
+            totalBytesWritten: totalBytesWritten,
+            totalBytesExpectedToWrite: totalBytesExpectedToWrite
+        ) {
+            terminalError = BoundedDownloadError.exceedsLimit
+            downloadTask.cancel()
+        }
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        didCompleteWithError error: Error?
+    ) {
+        guard let continuation else { return }
+        self.continuation = nil
+        defer {
+            session.finishTasksAndInvalidate()
+            self.session = nil
+        }
+
+        if let terminalError {
+            continuation.resume(throwing: terminalError)
+        } else if let error {
+            continuation.resume(throwing: error)
+        } else if let response = task.response,
+                  let destinationURL,
+                  FileManager.default.fileExists(atPath: destinationURL.path) {
+            continuation.resume(returning: response)
+        } else {
+            continuation.resume(throwing: BoundedDownloadError.missingDownloadedFile)
+        }
+    }
+
+    func exceedsLimit(
+        totalBytesWritten: Int64,
+        totalBytesExpectedToWrite: Int64
+    ) -> Bool {
+        totalBytesWritten > maximumBytes
+            || (totalBytesExpectedToWrite > 0 && totalBytesExpectedToWrite > maximumBytes)
     }
 }

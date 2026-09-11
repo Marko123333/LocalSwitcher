@@ -6,13 +6,25 @@ import Foundation
 @MainActor
 enum AppRelauncher {
     /// Перезапускает приложение: открывает бандл заново и завершает текущий процесс.
-    static func relaunch(bundlePath: String = Bundle.main.bundlePath) {
+    @discardableResult
+    static func relaunch(bundlePath: String = Bundle.main.bundlePath) -> Bool {
         // Путь передаём ПОЗИЦИОННЫМ аргументом ($1), а НЕ интерполяцией в команду — иначе
         // путь с кавычкой/;/`$()` привёл бы к shell-инъекции. sh не пере-парсит $1.
         let task = Process()
         task.launchPath = "/bin/sh"
-        task.arguments = ["-c", "sleep 1; open \"$1\"", "localswitcher-relaunch", bundlePath]
-        try? task.run()
-        NSApplication.shared.terminate(nil)
+        task.arguments = [
+            "-c",
+            "/bin/sleep 1; /usr/bin/open -- \"$1\"",
+            "localswitcher-relaunch",
+            bundlePath,
+        ]
+        do {
+            try task.run()
+            NSApplication.shared.terminate(nil)
+            return true
+        } catch {
+            rslog("Relaunch helper failed — \(error)")
+            return false
+        }
     }
 }

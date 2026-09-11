@@ -1,7 +1,7 @@
 {
-  "version": "0.1.8",
-  "build": "9",
+  "version": "0.1.9",
+  "build": "10",
   "dev": "dev",
   "url": "https://github.com/Marko123333/LocalSwitcher",
-  "notes": "Adds a curated Russian-particle lexicon with lowercase, sentence-capitalized and uppercase recognition. Fixes punctuation-key particles such as e; to уж and E; to Уж."
+  "notes": "Adds modern Russian loanwords with productive verb and noun forms, a broad AI vocabulary in Russian and English, and dictionary-backed recognition of uppercase words."
 }

@@ -442,4 +442,87 @@ struct LayoutRegressionTests {
             ) == .switchToConverted)
         }
     }
+
+    @Test @MainActor func convertsModernRussianBorrowingsAndProductiveVerbForms() {
+        for target in [
+            "ресерч", "Ресерч", "РЕСЕРЧ", "поресерч", "поресерчи",
+            "поресерчить", "заресерчил", "проресерчите", "погуглил",
+            "пофиксить", "запушили", "промпты", "датасетом", "нейронка",
+            "файн-тюнинг", "вайб-кодинг",
+        ] {
+            let typed = KeyMapping.convert(target)
+            #expect(LayoutDetector.decide(
+                typed: typed,
+                converted: target,
+                currentLang: "en",
+                otherLang: "ru",
+                capsLock: false
+            ) == .switchToConverted, "Failed modern term: \(target) from \(typed)")
+        }
+
+        #expect(KeyMapping.convert("ресерч") == "htcthx")
+        #expect(KeyMapping.convert("поресерч") == "gjhtcthx")
+        #expect(KeyMapping.convert("поресерчи") == "gjhtcthxb")
+    }
+
+    @Test @MainActor func recognizesRussianAndEnglishAITerms() {
+        for target in ["ии", "ИИ", "аи", "АИ", "ллм", "ЛЛМ", "раг", "РАГ"] {
+            #expect(LayoutDetector.decide(
+                typed: KeyMapping.convert(target),
+                converted: target,
+                currentLang: "en",
+                otherLang: "ru",
+                capsLock: false
+            ) == .switchToConverted, "Failed Russian AI term: \(target)")
+        }
+
+        for target in ["ai", "AI", "llm", "LLM", "rag", "RAG", "gpt", "GPT"] {
+            #expect(LayoutDetector.decide(
+                typed: KeyMapping.convert(target),
+                converted: target,
+                currentLang: "ru",
+                otherLang: "en",
+                capsLock: false
+            ) == .switchToConverted, "Failed English AI term: \(target)")
+        }
+
+        #expect(KeyMapping.convert("ИИ") == "BB")
+        #expect(KeyMapping.convert("АИ") == "FB")
+        #expect(KeyMapping.convert("AI") == "ФШ")
+    }
+
+    @Test @MainActor func checksAllCapsWordsAgainstDictionaries() {
+        for target in ["ПРИВЕТ", "РАБОТАЕТ", "ИССЛЕДОВАНИЕ"] {
+            #expect(LayoutDetector.decide(
+                typed: KeyMapping.convert(target),
+                converted: target,
+                currentLang: "en",
+                otherLang: "ru",
+                capsLock: false
+            ) == .switchToConverted, "Failed uppercase dictionary word: \(target)")
+        }
+
+        for currentWord in ["TEST", "SERVER", "RESEARCH", "NASA", "HTTP", "SSH", "MCP", "KB", "KM"] {
+            #expect(LayoutDetector.decide(
+                typed: currentWord,
+                converted: KeyMapping.convert(currentWord),
+                currentLang: "en",
+                otherLang: "ru",
+                capsLock: false
+            ) != .switchToConverted, "Rewrote English acronym/word: \(currentWord)")
+        }
+    }
+
+    @Test func modernRussianLexiconHasNoUnreviewedEnglishKeyImageCollisions() {
+        let intentional: Set<String> = ["bb", "fb"] // user-requested ИИ and АИ
+        let collisions = ModernRussianLexicon.allWords.compactMap { target -> String? in
+            let typed = KeyMapping.convert(target).lowercased()
+            guard typed.allSatisfy(\.isLetter),
+                  !intentional.contains(typed),
+                  HighConfidenceLexicon.contains(typed, language: "en")
+                    || BundledLexicon.contains(typed, language: "en") else { return nil }
+            return "\(typed) -> \(target)"
+        }.sorted()
+        #expect(collisions.isEmpty, "Unreviewed English collisions: \(collisions.prefix(20))")
+    }
 }

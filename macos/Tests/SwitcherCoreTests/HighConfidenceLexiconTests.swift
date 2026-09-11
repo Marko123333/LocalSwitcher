@@ -50,4 +50,20 @@ struct HighConfidenceLexiconTests {
         #expect(!HighConfidenceLexicon.containsTechnicalToken("example.com", language: "en"))
         #expect(!HighConfidenceLexicon.containsTechnicalToken("node.js", language: "ru"))
     }
+
+    @Test func recognizesModernRussianAndAITermsCaseInsensitively() {
+        #expect(ModernRussianLexicon.allWords.count > 6_000)
+        for word in [
+            "ресерч", "поресерч", "поресерчи", "поресерчить", "заресерчил",
+            "проресерчите", "ИИ", "АИ", "ЛЛМ", "РАГ", "нейронка", "промпты",
+            "датасетом", "эмбеддинги", "файн-тюнинг", "вайб-кодинг",
+        ] {
+            #expect(ModernRussianLexicon.contains(word), "Missing modern term: \(word)")
+            #expect(HighConfidenceLexicon.contains(word, language: "ru"))
+        }
+
+        for word in ["AI", "LLM", "RAG", "GPT", "ChatGPT", "OpenAI", "Qwen", "DeepSeek"] {
+            #expect(HighConfidenceLexicon.contains(word, language: "en"), "Missing AI term: \(word)")
+        }
+    }
 }

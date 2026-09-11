@@ -214,11 +214,13 @@ enum LayoutDetector {
         guard typed.allSatisfy({ $0.isLetter }) || converted.allSatisfy({ $0.isLetter }) else {
             return .undecided // цифры/URL/код/почта/эмодзи
         }
-        // Под Caps Lock весь текст в ВЕРХНЕМ регистре — это НЕ акроним и НЕ camelCase,
-        // поэтому эти два вето применяем только когда Caps Lock выключен.
-        if !capsLock {
-            if isAllCaps(typed) { return .undecided }                      // акронимы
-            if looksLikeCodeIdentifier(typed) { return .undecided }        // camelCase / смешанные алфавиты
+        // Dictionary lookups below are case-insensitive, so an all-caps target
+        // (`GHBDTN` -> `ПРИВЕТ`) must reach them even when the user held Shift
+        // rather than Caps Lock. Real acronyms remain safe when their current-side
+        // spelling is known or the opposite-side image is unknown. Mixed-case code
+        // identifiers keep the conservative veto.
+        if !capsLock, !isAllCaps(typed), looksLikeCodeIdentifier(typed) {
+            return .undecided
         }
 
         // --- Кросс-скрипт пары с ивритом (3.0) ---

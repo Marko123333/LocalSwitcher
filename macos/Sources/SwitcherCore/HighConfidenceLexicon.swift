@@ -20,6 +20,10 @@ public enum HighConfidenceLexicon {
         "cloudpanel", "coolify", "cpanel", "cyberpanel", "directadmin",
         "dokploy", "hestiacp", "openlitespeed", "plesk", "runcloud",
         "virtualmin", "webmin",
+        "chatgpt", "claude", "copilot", "cuda", "deepseek", "gemini", "gpt",
+        "huggingface", "langchain", "llama", "lora", "mistral", "mlx", "ollama",
+        "onnx", "openai", "perplexity", "pytorch", "qlora", "qwen", "rag", "rlhf",
+        "sft", "tensorflow", "vllm",
     ]
 
     /// Frequent Russian abbreviations and informal words that are commonly
@@ -49,7 +53,9 @@ public enum HighConfidenceLexicon {
         let normalized = word.lowercased()
         return switch language.lowercased().prefix(2) {
         case "en": english.contains(normalized)
-        case "ru": russian.contains(normalized) || RussianParticles.contains(normalized)
+        case "ru": russian.contains(normalized)
+            || RussianParticles.contains(normalized)
+            || ModernRussianLexicon.contains(normalized)
         default: false
         }
     }

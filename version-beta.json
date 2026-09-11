@@ -1,7 +1,7 @@
 {
-  "version": "0.1.5b",
-  "build": "6",
+  "version": "0.1.6b",
+  "build": "7",
   "dev": "dev",
   "url": "https://github.com/Marko123333/LocalSwitcher",
-  "notes": "Development channel with reliable MCP case handling, the reported не работает ещё English-layout regression and one-shot correction rejection. Automatic updates remain disabled until a signed release channel is configured."
+  "notes": "Development channel with safer same-language spelling correction and reliable tot -> еще -> ещё conversion from the English layout. Automatic updates remain disabled until a signed release channel is configured."
 }

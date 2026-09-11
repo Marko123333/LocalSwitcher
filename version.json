@@ -1,7 +1,7 @@
 {
-  "version": "0.1.5",
-  "build": "6",
+  "version": "0.1.6",
+  "build": "7",
   "dev": "dev",
   "url": "https://github.com/Marko123333/LocalSwitcher",
-  "notes": "Adds reliable conversion for MCP in both cases and for the reported Russian phrase не работает ещё typed in the English layout. Rejecting a correction now skips it once instead of disabling it for the whole session."
+  "notes": "Stops fuzzy spelling correction from rewriting known Russian words such as скачивание, while preserving explicitly reviewed typo fixes. Adds reliable tot -> еще -> ещё conversion from the English layout."
 }

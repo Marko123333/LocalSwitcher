@@ -24,6 +24,7 @@ struct HighConfidenceLexiconTests {
 
     @Test func doesNotLeakTermsAcrossLanguages() {
         #expect(!HighConfidenceLexicon.contains("ssh", language: "ru"))
+        #expect(HighConfidenceLexicon.contains("еще", language: "ru"))
         #expect(HighConfidenceLexicon.contains("ещё", language: "ru"))
         #expect(!HighConfidenceLexicon.contains("definitely-not-a-term", language: "en"))
     }

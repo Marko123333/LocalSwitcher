@@ -63,7 +63,15 @@ enum Dict {
     /// Returns only a one-edit, same-script correction accepted by the local
     /// safety filter. No text or diagnostics leave the Mac.
     @MainActor static func bestCorrection(_ word: String, lang: String) -> String? {
-        guard !isValidWord(word.lowercased(), lang: lang) else { return nil }
+        // Explicitly reviewed typos remain eligible even when the broad corpus
+        // happens to contain their misspelling (`питух` is one such noisy entry).
+        if let explicit = SpellingCandidateSelector.best(original: word, guesses: []) {
+            return explicit
+        }
+
+        let normalized = word.lowercased()
+        guard !isValidWord(normalized, lang: lang),
+              !BundledLexicon.contains(normalized, language: lang) else { return nil }
         let range = NSRange(location: 0, length: (word as NSString).length)
         let guesses = checker.guesses(
             forWordRange: range,

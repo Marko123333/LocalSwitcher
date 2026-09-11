@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import SwitcherCore
 @testable import LocalSwitcher
 
 @Suite("Reported layout regressions")
@@ -121,6 +122,18 @@ struct LayoutRegressionTests {
         ))
     }
 
+    @Test @MainActor func convertsPlainEImageOfYoWordFromEnglishLayout() {
+        #expect(KeyMapping.convert("еще") == "tot")
+        #expect(LayoutDetector.decide(
+            typed: "tot",
+            converted: "еще",
+            currentLang: "en",
+            otherLang: "ru",
+            capsLock: false
+        ) == .switchToConverted)
+        #expect(BundledRussianLexicon.makeYoRestorer().restore("еще") == .restored("ещё"))
+    }
+
     @Test @MainActor func convertsRussianConjunctionFromEnglishLayout() {
         for (typed, converted) in [("b", "и"), ("d", "в"), ("c", "с"), ("r", "к"),
                                    ("j", "о"), ("e", "у"), ("f", "а"), ("z", "я")] {
@@ -236,6 +249,11 @@ struct LayoutRegressionTests {
             convertedHasSafeCorrection: false
         ))
         #expect(Dict.bestCorrection("питух", lang: "ru") == "петух")
+    }
+
+    @Test @MainActor func doesNotRewriteKnownRussianWordAsAnotherWord() {
+        #expect(BundledLexicon.contains("скачивание", language: "ru"))
+        #expect(Dict.bestCorrection("скачивание", lang: "ru") == nil)
     }
 
     @Test func rejectedCorrectionIsSuppressedOnlyOncePerSpelling() {

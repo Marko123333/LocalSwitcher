@@ -15,6 +15,7 @@ struct BundledRussianLexiconTests {
     @Test func loadsPinnedYoDictionary() {
         let restorer = BundledRussianLexicon.makeYoRestorer()
         #expect(restorer.restore("елка") == .restored("ёлка"))
+        #expect(restorer.restore("еще") == .restored("ещё"))
         #expect(restorer.restore("авиаперелетов") == .restored("авиаперелётов"))
     }
 

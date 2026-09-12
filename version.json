@@ -1,8 +1,8 @@
 {
-  "version": "0.1.11",
-  "build": "12",
+  "version": "0.1.12",
+  "build": "13",
   "dev": "",
   "url": "https://github.com/Marko123333/LocalSwitcher",
-  "notes": "Adds signed one-click updates with strict manifest, DMG, application certificate, bundle identity, version, atomic replacement, and rollback checks.",
-  "sha256": "b37233615823644265e8ea29e9d5ac3b841f1d823da25a5c4a4c774273312509"
+  "notes": "Improves first installation with a clear two-step DMG, guided permission setup, a lighter app icon, and a permanent macOS download filename.",
+  "sha256": "be4d17c3781970ba1d898bb1148085ba0889e7e2d9157810096c6c6fa4ce6d50"
 }

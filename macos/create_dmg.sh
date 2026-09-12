@@ -41,7 +41,10 @@ fi
 export RS_VERSION_JSON="$SCRIPT_DIR/$VERSION_FILE"
 VERSION=$(/usr/bin/python3 -c "import json;print(json.load(open('$VERSION_FILE'))['version'])")
 BUILD=$(/usr/bin/python3 -c "import json;print(json.load(open('$VERSION_FILE')).get('build','1'))")
-DMG_NAME="${APP_NAME}-${VERSION}.dmg"
+DMG_NAME="${APP_NAME}-macOS-arm64.dmg"
+# 0.1.11 and older updaters still request a versioned filename. Publish this
+# byte-identical compatibility copy alongside the permanent public filename.
+COMPAT_DMG_NAME="${APP_NAME}-${VERSION}.dmg"
 # Нотаризация: предпочитаем API-ключ App Store Connect — файл на диске, НЕ зависит
 # от Keychain (keychain-профиль уже дважды пропадал: 2026-07-01 и 2026-07-10).
 # Конфиг ключа: ~/.config/localswitcher/notary.conf (задаёт NOTARY_KEY_FILE,
@@ -85,6 +88,22 @@ export RS_OUTPUT_DIR="$BUILD_OUTPUT_DIR"
 APP_PATH="$BUILD_OUTPUT_DIR/${APP_NAME}.app"
 
 echo "=== Creating styled DMG ==="
+
+# The source artwork and generated icon files must never drift apart.
+echo "→ Generating current application icon..."
+"$SCRIPT_DIR/generate_icon.swift"
+/usr/bin/iconutil -c icns "$SCRIPT_DIR/LocalSwitcher.iconset" -o "$SCRIPT_DIR/LocalSwitcher.icns"
+
+# The background is source-generated on every build. Shipping a stale checked-in
+# PNG previously left the old RuSwitcher title and overlapping instructions in DMG.
+echo "→ Generating current DMG background..."
+"$SCRIPT_DIR/generate_dmg_background.swift" "$SCRIPT_DIR/$BACKGROUND"
+BACKGROUND_WIDTH=$(sips -g pixelWidth "$SCRIPT_DIR/$BACKGROUND" | awk '/pixelWidth/ {print $2}')
+BACKGROUND_HEIGHT=$(sips -g pixelHeight "$SCRIPT_DIR/$BACKGROUND" | awk '/pixelHeight/ {print $2}')
+if [ "$BACKGROUND_WIDTH" != "760" ] || [ "$BACKGROUND_HEIGHT" != "440" ]; then
+    echo "ERROR: DMG background must be 760x440, got ${BACKGROUND_WIDTH}x${BACKGROUND_HEIGHT}." >&2
+    exit 1
+fi
 
 # 00. Fail fast: нотаризационный профиль проверяем ДО многоминутной сборки.
 #     Профиль уже ДВАЖДЫ пропадал из Keychain (2026-07: удалён на живой системе
@@ -161,7 +180,7 @@ if [ "${SKIP_NOTARIZE:-0}" != "1" ]; then
 fi
 
 # Clean up
-rm -f "$DMG_NAME" "$DMG_TEMP"
+rm -f "$DMG_NAME" "$COMPAT_DMG_NAME" "$DMG_TEMP"
 
 # 0c. Снимаем «застрявшие» тома с тем же именем. Если /Volumes/LocalSwitcher уже занят,
 #     наш temp-образ примонтируется как «LocalSwitcher 1», а AppleScript-оформление
@@ -209,7 +228,7 @@ tell application "Finder"
         set current view of container window to icon view
         set toolbar visible of container window to false
         set statusbar visible of container window to false
-        set bounds of container window to {100, 100, 760, 500}
+        set bounds of container window to {100, 100, 860, 540}
 
         set theViewOptions to icon view options of container window
         set arrangement of theViewOptions to not arranged
@@ -218,8 +237,8 @@ tell application "Finder"
         set background picture of theViewOptions to file ".background:background.png"
 
         -- Position: app icon on left, Applications on right
-        set position of item "$APP_NAME.app" of container window to {170, 210}
-        set position of item "Applications" of container window to {490, 210}
+        set position of item "$APP_NAME.app" of container window to {190, 220}
+        set position of item "Applications" of container window to {570, 220}
 
         close
         open
@@ -292,6 +311,14 @@ fi
 # 11. Записываем sha256 обратно в version.json и cask — хэш механически привязан
 #     к реально собранному DMG, а не копируется руками (раньше это расходилось).
 DMG_SHA=$(shasum -a 256 "$DMG_NAME" | awk '{print $1}')
+# Keep old clients updateable while all current documentation and new clients use
+# the permanent asset name. Both files have exactly the manifest-bound bytes.
+cp "$DMG_NAME" "$COMPAT_DMG_NAME"
+COMPAT_DMG_SHA=$(shasum -a 256 "$COMPAT_DMG_NAME" | awk '{print $1}')
+if [ "$COMPAT_DMG_SHA" != "$DMG_SHA" ]; then
+    echo "ERROR: compatibility DMG hash differs from primary DMG." >&2
+    exit 1
+fi
 if [ "$BETA" = "1" ]; then
     # Бета: пишем sha ТОЛЬКО в version-beta.json. Стабильный version.json и cask не трогаем
     # (Homebrew отслеживает стабильные релизы; беты идут только через встроенный апдейтер).
@@ -340,5 +367,6 @@ echo "→ Signing update manifest..."
 echo ""
 echo "=== Done! ==="
 echo "DMG: $(pwd)/$DMG_NAME ($(du -h "$DMG_NAME" | cut -f1))"
+echo "Compatibility DMG: $(pwd)/$COMPAT_DMG_NAME"
 echo "SHA256: $DMG_SHA"
 echo "→ Update manifest signed and bound to the DMG hash."

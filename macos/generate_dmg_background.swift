@@ -2,25 +2,19 @@
 import AppKit
 import CoreGraphics
 
-let width: CGFloat = 660
-let height: CGFloat = 400
+let width: CGFloat = 760
+let height: CGFloat = 440
 
-// Версия читается из version.json (единый источник правды, лежит в КОРНЕ репо —
-// путь строим от расположения скрипта, а не от CWD).
 func readVersion() -> String {
     let path = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent().deletingLastPathComponent()
         .appendingPathComponent("version.json").path
     guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-          let v = json["version"] as? String else {
-        return "?"
-    }
-    return v
+          let version = json["version"] as? String else { return "?" }
+    return version
 }
-let appVersion = readVersion()
 
-// Create bitmap context
 let rep = NSBitmapImageRep(
     bitmapDataPlanes: nil,
     pixelsWide: Int(width),
@@ -34,117 +28,115 @@ let rep = NSBitmapImageRep(
     bitsPerPixel: 0
 )!
 
-let context = NSGraphicsContext(bitmapImageRep: rep)!
-NSGraphicsContext.current = context
-let ctx = context.cgContext
-
-// --- Background gradient (dark blue-gray) ---
+NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+let ctx = NSGraphicsContext.current!.cgContext
 let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
-let gradientColors = [
-    CGColor(colorSpace: colorSpace, components: [0.12, 0.13, 0.18, 1.0])!,
-    CGColor(colorSpace: colorSpace, components: [0.18, 0.20, 0.28, 1.0])!,
-    CGColor(colorSpace: colorSpace, components: [0.12, 0.13, 0.18, 1.0])!,
-]
-let gradient = CGGradient(colorsSpace: colorSpace, colors: gradientColors as CFArray, locations: [0.0, 0.5, 1.0])!
-ctx.drawLinearGradient(gradient, start: CGPoint(x: 0, y: height), end: CGPoint(x: 0, y: 0), options: [])
 
-// --- Subtle grid pattern ---
-ctx.setStrokeColor(CGColor(colorSpace: colorSpace, components: [1, 1, 1, 0.03])!)
-ctx.setLineWidth(0.5)
-for x in stride(from: 0, through: width, by: 30) {
-    ctx.move(to: CGPoint(x: x, y: 0))
-    ctx.addLine(to: CGPoint(x: x, y: height))
+let background = CGGradient(
+    colorsSpace: colorSpace,
+    colors: [
+        NSColor(calibratedRed: 0.97, green: 0.99, blue: 1.00, alpha: 1).cgColor,
+        NSColor(calibratedRed: 0.91, green: 0.97, blue: 0.99, alpha: 1).cgColor,
+        NSColor(calibratedRed: 0.96, green: 1.00, blue: 0.98, alpha: 1).cgColor,
+    ] as CFArray,
+    locations: [0, 0.55, 1]
+)!
+ctx.drawLinearGradient(
+    background,
+    start: CGPoint(x: 0, y: height),
+    end: CGPoint(x: width, y: 0),
+    options: []
+)
+
+func fillCircle(center: CGPoint, radius: CGFloat, color: NSColor) {
+    ctx.setFillColor(color.cgColor)
+    ctx.fillEllipse(in: CGRect(
+        x: center.x - radius,
+        y: center.y - radius,
+        width: radius * 2,
+        height: radius * 2
+    ))
 }
-for y in stride(from: 0, through: height, by: 30) {
-    ctx.move(to: CGPoint(x: 0, y: y))
-    ctx.addLine(to: CGPoint(x: width, y: y))
-}
-ctx.strokePath()
 
-// --- Title "LocalSwitcher" at top ---
-let titleAttrs: [NSAttributedString.Key: Any] = [
-    .font: NSFont.systemFont(ofSize: 28, weight: .bold),
-    .foregroundColor: NSColor(calibratedRed: 0.85, green: 0.88, blue: 0.95, alpha: 1.0),
+// Very soft atmosphere, kept away from labels and instructional text.
+fillCircle(center: CGPoint(x: 88, y: 372), radius: 130,
+           color: NSColor(calibratedRed: 0.55, green: 0.86, blue: 1, alpha: 0.09))
+fillCircle(center: CGPoint(x: 700, y: 355), radius: 150,
+           color: NSColor(calibratedRed: 0.50, green: 1, blue: 0.82, alpha: 0.08))
+
+let titleAttributes: [NSAttributedString.Key: Any] = [
+    .font: NSFont.systemFont(ofSize: 27, weight: .semibold),
+    .foregroundColor: NSColor(calibratedRed: 0.09, green: 0.16, blue: 0.22, alpha: 1),
 ]
-let title = "LocalSwitcher" as NSString
-let titleSize = title.size(withAttributes: titleAttrs)
-title.draw(at: NSPoint(x: (width - titleSize.width) / 2, y: height - 55), withAttributes: titleAttrs)
+let title = "Установка в два шага" as NSString
+let titleSize = title.size(withAttributes: titleAttributes)
+title.draw(at: CGPoint(x: (width - titleSize.width) / 2, y: 382), withAttributes: titleAttributes)
 
-// --- Subtitle ---
-let subAttrs: [NSAttributedString.Key: Any] = [
-    .font: NSFont.systemFont(ofSize: 13, weight: .regular),
-    .foregroundColor: NSColor(calibratedRed: 0.55, green: 0.58, blue: 0.68, alpha: 1.0),
+let subtitleAttributes: [NSAttributedString.Key: Any] = [
+    .font: NSFont.systemFont(ofSize: 13, weight: .medium),
+    .foregroundColor: NSColor(calibratedRed: 0.31, green: 0.42, blue: 0.49, alpha: 1),
 ]
-let subtitle = "Keyboard layout switcher for macOS" as NSString
-let subSize = subtitle.size(withAttributes: subAttrs)
-subtitle.draw(at: NSPoint(x: (width - subSize.width) / 2, y: height - 80), withAttributes: subAttrs)
+let subtitle = "Install in two steps" as NSString
+let subtitleSize = subtitle.size(withAttributes: subtitleAttributes)
+subtitle.draw(at: CGPoint(x: (width - subtitleSize.width) / 2, y: 357), withAttributes: subtitleAttributes)
 
-// --- Arrow in the middle (between icon positions) ---
-// App icon will be at x=170, Applications at x=490
-// Arrow goes from ~260 to ~400
-
-let arrowY: CGFloat = 185  // vertical center of icons area
-let arrowStartX: CGFloat = 255
-let arrowEndX: CGFloat = 405
-
-// Arrow body - gradient line
+// Arrow sits between Finder icons. No text is placed near either icon label.
+let arrowColor = NSColor(calibratedRed: 0.19, green: 0.62, blue: 0.86, alpha: 0.9)
+ctx.setStrokeColor(arrowColor.cgColor)
+ctx.setLineWidth(4)
 ctx.setLineCap(.round)
-ctx.setLineWidth(3)
-
-// Draw dashed arrow body
-let dashColor = CGColor(colorSpace: colorSpace, components: [0.4, 0.5, 0.9, 0.6])!
-ctx.setStrokeColor(dashColor)
-ctx.setLineDash(phase: 0, lengths: [8, 6])
-ctx.move(to: CGPoint(x: arrowStartX, y: arrowY))
-ctx.addLine(to: CGPoint(x: arrowEndX - 15, y: arrowY))
+ctx.move(to: CGPoint(x: 303, y: 220))
+ctx.addCurve(
+    to: CGPoint(x: 457, y: 220),
+    control1: CGPoint(x: 350, y: 245),
+    control2: CGPoint(x: 410, y: 195)
+)
 ctx.strokePath()
-
-// Arrow head
-ctx.setLineDash(phase: 0, lengths: [])
-ctx.setFillColor(dashColor)
-ctx.move(to: CGPoint(x: arrowEndX, y: arrowY))
-ctx.addLine(to: CGPoint(x: arrowEndX - 20, y: arrowY + 12))
-ctx.addLine(to: CGPoint(x: arrowEndX - 20, y: arrowY - 12))
+ctx.setFillColor(arrowColor.cgColor)
+ctx.move(to: CGPoint(x: 465, y: 220))
+ctx.addLine(to: CGPoint(x: 444, y: 235))
+ctx.addLine(to: CGPoint(x: 449, y: 210))
 ctx.closePath()
 ctx.fillPath()
 
-// --- "Drag to install" text under arrow ---
-let dragAttrs: [NSAttributedString.Key: Any] = [
-    .font: NSFont.systemFont(ofSize: 12, weight: .medium),
-    .foregroundColor: NSColor(calibratedRed: 0.45, green: 0.50, blue: 0.65, alpha: 0.8),
+let dragAttributes: [NSAttributedString.Key: Any] = [
+    .font: NSFont.systemFont(ofSize: 11, weight: .semibold),
+    .foregroundColor: NSColor(calibratedRed: 0.16, green: 0.49, blue: 0.67, alpha: 1),
+    .kern: 1.0,
 ]
-let dragText = "Drag to install  •  Перетащите для установки" as NSString
-let dragSize = dragText.size(withAttributes: dragAttrs)
-dragText.draw(at: NSPoint(x: (width - dragSize.width) / 2, y: arrowY - 45), withAttributes: dragAttrs)
+let drag = "ПЕРЕТАЩИТЕ  ·  DRAG" as NSString
+let dragSize = drag.size(withAttributes: dragAttributes)
+drag.draw(at: CGPoint(x: (width - dragSize.width) / 2, y: 173), withAttributes: dragAttributes)
 
-// --- Glow circles behind icon positions ---
-func drawGlow(at center: CGPoint, radius: CGFloat, color: [CGFloat]) {
-    let glowColors = [
-        CGColor(colorSpace: colorSpace, components: color + [0.15])!,
-        CGColor(colorSpace: colorSpace, components: color + [0.0])!,
-    ]
-    let glowGradient = CGGradient(colorsSpace: colorSpace, colors: glowColors as CFArray, locations: [0.0, 1.0])!
-    ctx.drawRadialGradient(glowGradient, startCenter: center, startRadius: 0, endCenter: center, endRadius: radius, options: [])
-}
+// Dedicated instruction panel below the Finder labels. This closes the user path:
+// copying an app does not launch it, so the second action must be explicit.
+let cardRect = CGRect(x: 42, y: 12, width: width - 84, height: 96)
+let cardPath = NSBezierPath(roundedRect: cardRect, xRadius: 18, yRadius: 18)
+NSColor(calibratedWhite: 1, alpha: 0.86).setFill()
+cardPath.fill()
+NSColor(calibratedRed: 0.68, green: 0.84, blue: 0.90, alpha: 0.75).setStroke()
+cardPath.lineWidth = 1
+cardPath.stroke()
 
-// Glow behind app icon area (left)
-drawGlow(at: CGPoint(x: 170, y: 195), radius: 90, color: [0.3, 0.4, 0.9])
-
-// Glow behind Applications area (right)
-drawGlow(at: CGPoint(x: 490, y: 195), radius: 90, color: [0.3, 0.7, 0.5])
-
-// --- Version badge at bottom ---
-let verAttrs: [NSAttributedString.Key: Any] = [
-    .font: NSFont.systemFont(ofSize: 10, weight: .regular),
-    .foregroundColor: NSColor(calibratedRed: 0.4, green: 0.42, blue: 0.5, alpha: 0.6),
+let instructionAttributes: [NSAttributedString.Key: Any] = [
+    .font: NSFont.systemFont(ofSize: 14, weight: .medium),
+    .foregroundColor: NSColor(calibratedRed: 0.10, green: 0.18, blue: 0.23, alpha: 1),
 ]
-let verText = "v\(appVersion)  •  MIT License  •  github.com/Marko123333/LocalSwitcher" as NSString
-let verSize = verText.size(withAttributes: verAttrs)
-verText.draw(at: NSPoint(x: (width - verSize.width) / 2, y: 15), withAttributes: verAttrs)
+let mutedAttributes: [NSAttributedString.Key: Any] = [
+    .font: NSFont.systemFont(ofSize: 11, weight: .regular),
+    .foregroundColor: NSColor(calibratedRed: 0.36, green: 0.45, blue: 0.50, alpha: 1),
+]
+("1. Перетащите LocalSwitcher в Applications" as NSString)
+    .draw(at: CGPoint(x: 66, y: 72), withAttributes: instructionAttributes)
+("2. Затем откройте LocalSwitcher из папки «Программы»" as NSString)
+    .draw(at: CGPoint(x: 66, y: 47), withAttributes: instructionAttributes)
+("Если macOS предупредит: Control-клик по приложению → «Открыть»" as NSString)
+    .draw(at: CGPoint(x: 66, y: 24), withAttributes: mutedAttributes)
+let version = "v\(readVersion())  ·  macOS 13+  ·  Apple Silicon" as NSString
+let versionSize = version.size(withAttributes: mutedAttributes)
+version.draw(at: CGPoint(x: width - versionSize.width - 18, y: 414), withAttributes: mutedAttributes)
 
-// --- Save ---
 NSGraphicsContext.current = nil
-let pngData = rep.representation(using: .png, properties: [:])!
 let outputPath = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "dmg_background.png"
-try! pngData.write(to: URL(fileURLWithPath: outputPath))
+try rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: outputPath))
 print("Generated: \(outputPath) (\(Int(width))x\(Int(height)))")

@@ -16,6 +16,12 @@ struct UpdateManifestVerifierTests {
         #expect(!UpdateVersion.isNewer("0.1.12", than: "not-a-version"))
     }
 
+    @Test func releaseUsesStablePlatformFilenameInsideVersionedTag() {
+        #expect(SettingsManager.releaseDMGFilename == "LocalSwitcher-macOS-arm64.dmg")
+        #expect(SettingsManager.releaseDMGURL(version: "0.1.12") ==
+            "https://github.com/Marko123333/LocalSwitcher/releases/download/v0.1.12/LocalSwitcher-macOS-arm64.dmg")
+    }
+
     @Test func repositoryFeedsHaveValidProductionSignatures() throws {
         let repository = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

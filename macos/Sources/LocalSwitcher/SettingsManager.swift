@@ -368,8 +368,11 @@ final class SettingsManager: @unchecked Sendable {
     /// Telegram-чат поддержки (t.me/…). Пусто → пункт меню скрыт. Инвайт-ссылка группы
     /// обсуждения канала @LocalSwitcher (её можно отозвать в настройках группы — тогда обновить).
     static let telegramChatURL = ""
+    /// Release assets keep the same public filename across versions. The version
+    /// remains in the tag path so stable and beta channels cannot be mixed up.
+    static let releaseDMGFilename = "LocalSwitcher-macOS-arm64.dmg"
     static func releaseDMGURL(version: String) -> String {
-        "\(githubURL)/releases/download/v\(version)/\(githubRepo)-\(version).dmg"
+        "\(githubURL)/releases/download/v\(version)/\(releaseDMGFilename)"
     }
 
     // MARK: - Login Item

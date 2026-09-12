@@ -11,6 +11,12 @@ enum L10n {
     static var menuQuit: String { s("menu.quit") }
 
     // MARK: - Визард разрешений
+    static var wizardAccessibilityTitle: String { s("wizard.accessibility.title") }
+    static var wizardAccessibilityText: String { s("wizard.accessibility.text") }
+    static var wizardInputMonitoringTitle: String { s("wizard.inputMonitoring.title") }
+    static var wizardInputMonitoringText: String { s("wizard.inputMonitoring.text") }
+    static var wizardOpenSettings: String { s("wizard.openSettings") }
+    static var wizardLater: String { s("wizard.later") }
     static var wizardPermissionsResetTitle: String { s("wizard.permissionsReset.title") }
     static var wizardPermissionsResetText: String { s("wizard.permissionsReset.text") }
     static var permissionsOkTitle: String { s("wizard.permissionsOk.title") }
